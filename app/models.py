@@ -71,7 +71,7 @@ class AuditLog(Base):
     id = Column(Integer, primary_key=True)
     timestamp = Column(DateTime, default=now_utc)
     username = Column(String(50), nullable=False)
-    action = Column(String(255), nullable=False)
+    action = Column(Text, nullable=False)
     module = Column(String(50), nullable=False)
     reference = Column(String(50), nullable=True)
 
