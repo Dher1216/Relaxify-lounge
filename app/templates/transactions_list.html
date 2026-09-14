@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Transactions - Relaxify Lounge{% endblock %}
+{% block content %}
+<h2>All Transactions</h2>
+
+<div class="card">
+  <form method="get" action="/transactions" class="grid grid-4">
+    <div><label>From</label><input type="date" name="date_from" value="{{ filters.date_from or '' }}"></div>
+    <div><label>To</label><input type="date" name="date_to" value="{{ filters.date_to or '' }}"></div>
+    <div>
+      <label>Type</label>
+      <select name="ttype">
+        <option value="">All</option>
+        <option value="RECEIPT" {% if filters.ttype == 'RECEIPT' %}selected{% endif %}>Receipt</option>
+        <option value="DISBURSEMENT" {% if filters.ttype == 'DISBURSEMENT' %}selected{% endif %}>Disbursement</option>
+      </select>
+    </div>
+    <div>
+      <label>Status</label>
+      <select name="status">
+        <option value="">All</option>
+        <option value="ACTIVE" {% if filters.status == 'ACTIVE' %}selected{% endif %}>Active</option>
+        <option value="VOIDED" {% if filters.status == 'VOIDED' %}selected{% endif %}>Voided</option>
+      </select>
+    </div>
+    <div style="grid-column: span 3">
+      <label>Search Reference #</label>
+      <input type="text" name="q" value="{{ filters.q or '' }}">
+    </div>
+    <div style="align-self:end"><button type="submit">Filter</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+  <table>
+    <tr><th>Date</th><th>Reference</th><th>Type</th><th>Status</th><th>Remarks</th><th>Entered By</th></tr>
+    {% for t in txns %}
+    <tr>
+      <td>{{ t.transaction_date.strftime('%m/%d/%Y') }}</td>
+      <td><a href="/transactions/{{ t.id }}">{{ t.reference_number }}</a></td>
+      <td>{{ t.transaction_type }}</td>
+      <td><span class="badge {{ 'badge-active' if t.status == 'ACTIVE' else 'badge-voided' }}">{{ t.status }}</span></td>
+      <td>{{ t.remarks or '—' }}</td>
+      <td>{{ t.created_by }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6">No transactions recorded.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+  <p style="font-size:0.8rem;color:#999;margin-top:10px">Showing page {{ page }} &middot; {{ total }} total transactions</p>
+</div>
+{% endblock %}

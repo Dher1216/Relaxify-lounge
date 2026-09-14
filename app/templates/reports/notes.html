@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Notes to Financial Statements - Relaxify Lounge{% endblock %}
+{% block content %}
+<h2>Notes to Financial Statements</h2>
+
+<div class="card no-print">
+  <h3>Add Note</h3>
+  <form method="post" action="/reports/notes/add" class="grid grid-2">
+    <div><label>Title</label><input type="text" name="title" required placeholder="e.g. Cash and Cash Equivalents"></div>
+    <div style="align-self:end"><button type="submit">Add Note</button></div>
+    <div style="grid-column: span 2"><label>Content</label><textarea name="content" rows="3" required></textarea></div>
+  </form>
+</div>
+
+<div class="card">
+  {% set report_title = "Notes to Financial Statements" %}
+  {% set period_line = None %}
+  {% include "reports/_header.html" %}
+  <button class="no-print" onclick="window.print()">Print</button>
+  {% for n in notes %}
+  <div style="margin-bottom:20px;border-bottom:1px solid #333;padding-bottom:14px">
+    <h3>{{ n.title }}</h3>
+    <p style="white-space:pre-wrap">{{ n.content }}</p>
+    <p style="font-size:0.7rem;color:#999">Last updated by {{ n.updated_by }} on {{ n.updated_at.strftime('%m/%d/%Y') }}</p>
+    <button class="no-print btn-secondary" style="padding:4px 10px;font-size:0.75rem" onclick="document.getElementById('edit-{{ n.id }}').classList.add('show')">Edit</button>
+    <div class="modal-overlay" id="edit-{{ n.id }}">
+      <div class="modal-box" style="max-width:500px">
+        <h3>Edit Note</h3>
+        <form method="post" action="/reports/notes/{{ n.id }}/edit">
+          <label>Title</label><input type="text" name="title" value="{{ n.title }}" required>
+          <label>Content</label><textarea name="content" rows="4" required>{{ n.content }}</textarea>
+          <div class="actions">
+            <button type="submit">Save</button>
+            <button type="button" class="btn-secondary" onclick="document.getElementById('edit-{{ n.id }}').classList.remove('show')">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <p>No notes have been added yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}

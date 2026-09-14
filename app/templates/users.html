@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Users - Relaxify Lounge{% endblock %}
+{% block content %}
+<h2>User Management</h2>
+{% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <h3>Add User</h3>
+  <form method="post" action="/users/add" class="grid grid-3">
+    <div><label>Username</label><input type="text" name="username" required></div>
+    <div><label>Password</label><input type="password" name="password" required minlength="8"></div>
+    <div><label>Role</label>
+      <select name="role" required>{% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}</select>
+    </div>
+    <div style="align-self:end"><button type="submit">Add User</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Change My Password</h3>
+  <form method="post" action="/users/change-password" class="grid grid-3">
+    <div><label>Current Password</label><input type="password" name="current_password" required></div>
+    <div><label>New Password</label><input type="password" name="new_password" required minlength="8"></div>
+    <div style="align-self:end"><button type="submit">Update Password</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+  <table>
+    <tr><th>Username</th><th>Role</th><th>Status</th><th>Actions</th></tr>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.username }}</td>
+      <td>{{ u.role }}</td>
+      <td><span class="badge {{ 'badge-active' if u.is_active else 'badge-voided' }}">{{ 'ACTIVE' if u.is_active else 'INACTIVE' }}</span></td>
+      <td>
+        {% if u.id != user.id %}
+        <form method="post" action="/users/{{ u.id }}/toggle" style="display:inline">
+          <button type="submit" class="btn-secondary" style="padding:4px 10px;font-size:0.75rem"
+            onclick="return confirm('Are you sure you want to {{ 'deactivate' if u.is_active else 'activate' }} this user?')">
+            {{ 'Deactivate' if u.is_active else 'Activate' }}
+          </button>
+        </form>
+        {% endif %}
+        <button class="btn-secondary" style="padding:4px 10px;font-size:0.75rem" onclick="document.getElementById('reset-{{ u.id }}').classList.add('show')">Reset Password</button>
+        <div class="modal-overlay" id="reset-{{ u.id }}">
+          <div class="modal-box">
+            <h3>Reset password for {{ u.username }}</h3>
+            <form method="post" action="/users/{{ u.id }}/reset-password">
+              <input type="password" name="new_password" placeholder="New password" required minlength="8">
+              <div class="actions">
+                <button type="submit">Reset</button>
+                <button type="button" class="btn-secondary" onclick="document.getElementById('reset-{{ u.id }}').classList.remove('show')">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+{% endblock %}

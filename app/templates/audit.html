@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Audit Trail - Relaxify Lounge{% endblock %}
+{% block content %}
+<h2>History / Audit Trail</h2>
+
+<div class="card">
+  <form method="get" action="/audit" class="grid grid-3">
+    <div><label>Search action text</label><input type="text" name="q" value="{{ q }}"></div>
+    <div><label>Username</label><input type="text" name="username" value="{{ username }}"></div>
+    <div style="align-self:end"><button type="submit">Filter</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+  <table>
+    <tr><th>Timestamp</th><th>User</th><th>Module</th><th>Action</th></tr>
+    {% for log in logs %}
+    <tr>
+      <td>{{ log.timestamp.strftime('%m/%d/%Y %I:%M %p') }}</td>
+      <td>{{ log.username }}</td>
+      <td>{{ log.module }}</td>
+      <td>{{ log.action }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">No audit records found.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+{% endblock %}

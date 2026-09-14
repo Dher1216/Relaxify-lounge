@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit" if edit_mode else "New" }} {{ ttype_label }} - Relaxify Lounge{% endblock %}
+{% block content %}
+<h2>{{ "Edit" if edit_mode else "New" }} {{ ttype_label }}{% if edit_mode %} &mdash; {{ reference_number }}{% endif %}</h2>
+
+{% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+{% if edit_mode %}<div class="error-msg" style="background:rgba(201,162,75,0.15);border-color:var(--gold);color:var(--gold-bright)">You are editing a posted transaction. This change will be recorded in the audit trail with the before/after amounts.</div>{% endif %}
+
+<div class="card">
+  <form method="post" action="{{ action_url }}" id="txnForm" data-track-changes>
+    <div class="grid grid-2">
+      <div>
+        <label>Transaction Date</label>
+        <input type="date" name="transaction_date" value="{{ form.transaction_date if form else today }}" max="{{ max_date }}" required>
+      </div>
+      <div>
+        <label>Reference Number</label>
+        <input type="text" value="{{ reference_number if edit_mode else 'Auto-generated on save' }}" disabled>
+      </div>
+    </div>
+
+    <h3>Accounting Lines</h3>
+    <div id="lines">
+      {% if form %}
+        {% for aid, d, c in zip(form.account_ids, form.debits, form.credits) %}
+        <div class="line-row">
+          <select name="account_id[]" required>
+            <option value="">-- Select Account --</option>
+            {% for acc in accounts %}
+            <option value="{{ acc.id }}" {% if aid == acc.id|string %}selected{% endif %}>{{ acc.code }} - {{ acc.name }}</option>
+            {% endfor %}
+          </select>
+          <input type="number" step="0.01" min="0" name="debit[]" placeholder="Debit" value="{{ d if d and d != '0' else '' }}">
+          <input type="number" step="0.01" min="0" name="credit[]" placeholder="Credit" value="{{ c if c and c != '0' else '' }}">
+          <button type="button" class="btn-secondary" onclick="this.parentElement.remove(); recalc();">✕</button>
+        </div>
+        {% endfor %}
+      {% else %}
+      <div class="line-row">
+        <select name="account_id[]" required>
+          <option value="">-- Select Account --</option>
+          {% for acc in accounts %}
+          <option value="{{ acc.id }}">{{ acc.code }} - {{ acc.name }}</option>
+          {% endfor %}
+        </select>
+        <input type="number" step="0.01" min="0" name="debit[]" placeholder="Debit">
+        <input type="number" step="0.01" min="0" name="credit[]" placeholder="Credit">
+        <button type="button" class="btn-secondary" onclick="this.parentElement.remove(); recalc();">✕</button>
+      </div>
+      <div class="line-row">
+        <select name="account_id[]" required>
+          <option value="">-- Select Account --</option>
+          {% for acc in accounts %}
+          <option value="{{ acc.id }}">{{ acc.code }} - {{ acc.name }}</option>
+          {% endfor %}
+        </select>
+        <input type="number" step="0.01" min="0" name="debit[]" placeholder="Debit">
+        <input type="number" step="0.01" min="0" name="credit[]" placeholder="Credit">
+        <button type="button" class="btn-secondary" onclick="this.parentElement.remove(); recalc();">✕</button>
+      </div>
+      {% endif %}
+    </div>
+    <button type="button" class="btn-secondary" onclick="addLine()">+ Add Line</button>
+
+    <div class="totals-row">
+      <span>Total Debit: ₱<span id="totalDebit">0.00</span></span>
+      <span>Total Credit: ₱<span id="totalCredit">0.00</span></span>
+      <span id="diffLabel" class="bad">Difference: ₱0.00</span>
+    </div>
+
+    <label style="margin-top:16px">Remarks / Description</label>
+    <textarea name="remarks" rows="2">{{ form.remarks if form else "" }}</textarea>
+
+    <input type="hidden" name="confirm_no_remarks" id="confirmNoRemarks" value="0">
+
+    <div style="margin-top:16px">
+      <button type="submit" id="saveBtn">{{ "Save Changes" if edit_mode else "Save Transaction" }}</button>
+      <a href="{{ '/transactions/' + (txn_id|string) if edit_mode else '/' }}" class="btn btn-secondary" style="margin-left:8px">Cancel</a>
+    </div>
+  </form>
+</div>
+
+{% if confirm_remarks %}
+<div class="modal-overlay show">
+  <div class="modal-box">
+    <h3>Remarks is empty.</h3>
+    <p>Are you sure you want to save this transaction without remarks?</p>
+    <div class="actions">
+      <button onclick="submitWithoutRemarks()">SAVE ANYWAY</button>
+      <button class="btn-secondary" onclick="document.querySelector('.modal-overlay').classList.remove('show')">CANCEL</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script>
+const accountsOptionsHtml = document.querySelector('#lines select').innerHTML.replace(/\s+selected(?=[\s>])/g, '');
+
+function addLine() {
+  const div = document.createElement('div');
+  div.className = 'line-row';
+  div.innerHTML = `
+    <select name="account_id[]" required>${accountsOptionsHtml}</select>
+    <input type="number" step="0.01" min="0" name="debit[]" placeholder="Debit">
+    <input type="number" step="0.01" min="0" name="credit[]" placeholder="Credit">
+    <button type="button" class="btn-secondary" onclick="this.parentElement.remove(); recalc();">✕</button>
+  `;
+  document.getElementById('lines').appendChild(div);
+  attachRecalc();
+}
+
+function recalc() {
+  let td = 0, tc = 0;
+  document.querySelectorAll('input[name="debit[]"]').forEach(i => td += parseFloat(i.value || 0) || 0);
+  document.querySelectorAll('input[name="credit[]"]').forEach(i => tc += parseFloat(i.value || 0) || 0);
+  document.getElementById('totalDebit').innerText = td.toFixed(2);
+  document.getElementById('totalCredit').innerText = tc.toFixed(2);
+  const diff = Math.abs(td - tc);
+  const diffLabel = document.getElementById('diffLabel');
+  const lineCount = document.querySelectorAll('.line-row').length;
+  if (diff < 0.005 && td > 0 && lineCount >= 2) {
+    diffLabel.innerText = 'Balanced ✓';
+    diffLabel.className = 'ok';
+  } else {
+    diffLabel.innerText = 'Difference: ₱' + diff.toFixed(2) + (lineCount < 2 ? ' (add at least 2 lines)' : '');
+    diffLabel.className = 'bad';
+  }
+  // The indicator above is a live helper only — it never blocks Save. The server always
+  // has the final say and will show the exact reason if something doesn't add up, so a
+  // display glitch here can never silently prevent you from saving or editing a transaction.
+}
+
+function attachRecalc() {
+  document.querySelectorAll('input[name="debit[]"], input[name="credit[]"]').forEach(i => {
+    i.removeEventListener('input', recalc);
+    i.addEventListener('input', recalc);
+  });
+}
+
+function submitWithoutRemarks() {
+  document.getElementById('confirmNoRemarks').value = '1';
+  document.getElementById('txnForm').submit();
+}
+
+attachRecalc();
+recalc();
+</script>
+{% endblock %}
