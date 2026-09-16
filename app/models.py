@@ -2,7 +2,7 @@ import datetime
 from sqlalchemy import (
     Column, Integer, String, Numeric, Date, DateTime, ForeignKey, Boolean, Text
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from .database import Base
 
 
@@ -32,6 +32,9 @@ class Account(Base):
     normal_balance = Column(String(6), nullable=False)    # Debit / Credit
     notes = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    parent_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
+
+    children = relationship("Account", backref=backref("parent", remote_side=[id]))
 
 
 class Transaction(Base):
@@ -84,6 +87,29 @@ class FinancialNote(Base):
     content = Column(Text, nullable=False)
     updated_by = Column(String(50), nullable=True)
     updated_at = Column(DateTime, default=now_utc)
+
+
+class ChairRate(Base):
+    """Price list for each chair type at each duration option. Admin-editable, takes
+    effect by date so raising prices later never rewrites historical transactions."""
+    __tablename__ = "chair_rates"
+
+    id = Column(Integer, primary_key=True)
+    chair_type = Column(String(30), nullable=False)   # "Deluxe" / "King"
+    duration_minutes = Column(Integer, nullable=False)
+    price = Column(Numeric(18, 2), nullable=False)
+    effective_from = Column(Date, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class Setting(Base):
+    """Small generic key-value store for simple admin-editable numbers (e.g. the
+    Eye Massager add-on price) that don't warrant their own table."""
+    __tablename__ = "settings"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(60), unique=True, nullable=False)
+    value = Column(String(255), nullable=False)
 
 
 class Counter(Base):

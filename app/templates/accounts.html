@@ -27,19 +27,27 @@
       <select name="normal_balance" required><option value="Debit">Debit</option><option value="Credit">Credit</option></select>
     </div>
     <div><label>Notes</label><input type="text" name="notes"></div>
+    <div>
+      <label>Parent Account (optional)</label>
+      <select name="parent_id">
+        <option value="">-- None (top-level account) --</option>
+        {% for p in parent_options %}<option value="{{ p.id }}">{{ p.code }} - {{ p.name }}</option>{% endfor %}
+      </select>
+    </div>
     <div style="align-self:end"><button type="submit">Add Account</button></div>
   </form>
 </div>
 {% endif %}
 
 <div class="card">
+  <p style="font-size:0.8rem;color:#999;margin-bottom:10px">Sub-accounts are shown indented under their parent. Transactions can only be posted to accounts that don't have sub-accounts of their own &mdash; parent accounts exist purely to show a rolled-up total on reports and in the Account Ledger search.</p>
   <div class="table-wrap">
   <table>
     <tr><th>Code</th><th>Name</th><th>Type</th><th>Category</th><th>Normal Balance</th><th>Status</th>{% if can_edit %}<th>Actions</th>{% endif %}</tr>
-    {% for acc in accounts %}
+    {% for acc, depth in ordered_accounts %}
     <tr>
       <td>{{ acc.code }}</td>
-      <td>{{ acc.name }}</td>
+      <td>{{ "&nbsp;&nbsp;&nbsp;&nbsp;\u2514 "|safe if depth else "" }}{{ acc.name }}</td>
       <td>{{ acc.account_type }}</td>
       <td>{{ acc.category or '—' }}</td>
       <td>{{ acc.normal_balance }}</td>
@@ -75,6 +83,15 @@
               </select>
               <label>Notes</label>
               <input type="text" name="notes" value="{{ acc.notes or '' }}">
+              <label>Parent Account (optional)</label>
+              <select name="parent_id">
+                <option value="">-- None (top-level account) --</option>
+                {% for p in parent_options %}
+                  {% if p.id != acc.id %}
+                  <option value="{{ p.id }}" {% if acc.parent_id == p.id %}selected{% endif %}>{{ p.code }} - {{ p.name }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
               <div class="actions">
                 <button type="submit">Save Changes</button>
                 <button type="button" class="btn-secondary" onclick="document.getElementById('edit-{{ acc.id }}').classList.remove('show')">Cancel</button>

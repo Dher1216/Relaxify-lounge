@@ -3,9 +3,28 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from .models import Transaction, TransactionLine, Account, Counter
+from .models import Transaction, TransactionLine, Account, Counter, ChairRate
 
 PREFIXES = {"RECEIPT": "RCPT", "DISBURSEMENT": "DISB"}
+
+
+def get_descendant_ids(db: Session, account: Account) -> list[int]:
+    """Returns [account.id] plus the ids of its direct children (2-level hierarchy)."""
+    child_ids = [a.id for a in db.query(Account).filter(Account.parent_id == account.id).all()]
+    return [account.id] + child_ids
+
+
+def is_leaf_account(db: Session, account: Account) -> bool:
+    """True if this account has no active children - i.e. transactions can post to it directly."""
+    return db.query(Account).filter(Account.parent_id == account.id, Account.is_active == True).first() is None  # noqa: E712
+
+
+def postable_accounts(db: Session) -> list[Account]:
+    """Active accounts that transactions are allowed to post to directly - excludes any
+    account that currently has active children, since those exist purely as rollup labels."""
+    all_active = db.query(Account).filter(Account.is_active == True).order_by(Account.code).all()  # noqa: E712
+    parent_ids = {a.parent_id for a in all_active if a.parent_id}
+    return [a for a in all_active if a.id not in parent_ids]
 
 
 def next_reference_number(db: Session, transaction_type: str, as_of: datetime.date) -> str:
@@ -139,12 +158,18 @@ def income_statement(db: Session, from_date: datetime.date, to_date: datetime.da
         balance = account_net_balance(db, acc, as_of=to_date, from_date=from_date)
         if balance == 0:
             continue
-        row = {"code": acc.code, "name": acc.name, "amount": balance}
         if acc.account_type == "Revenue":
-            revenue.append(row); total_revenue += balance
+            # Contra-revenue accounts (e.g. Sales Discounts) have a Debit normal balance -
+            # their balance() is positive in ITS OWN direction, but that represents an amount
+            # to SUBTRACT from revenue, not add. Flip the sign so the total comes out right.
+            contribution = balance if acc.normal_balance == "Credit" else -balance
+            row = {"code": acc.code, "name": acc.name, "amount": contribution}
+            revenue.append(row); total_revenue += contribution
         elif acc.account_type == "COGS":
+            row = {"code": acc.code, "name": acc.name, "amount": balance}
             cogs.append(row); total_cogs += balance
         else:
+            row = {"code": acc.code, "name": acc.name, "amount": balance}
             expenses.append(row); total_expenses += balance
 
     gross_profit = total_revenue - total_cogs
@@ -288,3 +313,82 @@ def cash_flow_statement(db: Session, from_date: datetime.date, to_date: datetime
         "beginning_cash": beginning_cash, "ending_cash": ending_cash,
         "reconciles": (beginning_cash + net_change) == ending_cash,
     }
+
+
+def account_ledger(db: Session, account: Account, from_date: datetime.date, to_date: datetime.date):
+    """
+    General-ledger-style report for exactly one account. If `account` has children,
+    combines all of them into one ledger (each line still shows which specific
+    child account it came from) - otherwise it's just that one account's history.
+    """
+    children = db.query(Account).filter(Account.parent_id == account.id).all()
+    accounts_in_scope = [account] + children
+    ids = [a.id for a in accounts_in_scope]
+    normal = account.normal_balance  # children are expected to share the parent's normal balance
+
+    day_before = from_date - datetime.timedelta(days=1)
+    beginning = Decimal("0.00")
+    for a in accounts_in_scope:
+        beginning += account_net_balance(db, a, as_of=day_before)
+
+    lines = (
+        db.query(TransactionLine)
+        .join(Transaction, Transaction.id == TransactionLine.transaction_id)
+        .filter(TransactionLine.account_id.in_(ids))
+        .filter(Transaction.status == "ACTIVE")
+        .filter(Transaction.transaction_date >= from_date, Transaction.transaction_date <= to_date)
+        .order_by(Transaction.transaction_date, Transaction.id)
+        .all()
+    )
+
+    running = beginning
+    rows = []
+    for line in lines:
+        signed = (line.debit - line.credit) if normal == "Debit" else (line.credit - line.debit)
+        running += signed
+        rows.append({
+            "date": line.transaction.transaction_date,
+            "reference_number": line.transaction.reference_number,
+            "transaction_id": line.transaction.id,
+            "account_code": line.account.code,
+            "account_name": line.account.name,
+            "remarks": line.transaction.remarks,
+            "debit": line.debit,
+            "credit": line.credit,
+            "running_balance": running,
+        })
+
+    return {
+        "beginning": beginning,
+        "rows": rows,
+        "ending": running,
+        "children": children,
+    }
+
+
+def current_chair_rates(db: Session, as_of: datetime.date) -> dict:
+    """Returns {chair_type: {duration_minutes: price}} using whichever rate is actually
+    in effect as of the given date - never a future-dated rate that hasn't kicked in yet."""
+    all_rates = db.query(ChairRate).filter(ChairRate.is_active == True, ChairRate.effective_from <= as_of).all()  # noqa: E712
+    result = {}
+    latest_effective = {}
+    for r in all_rates:
+        key = (r.chair_type, r.duration_minutes)
+        if key not in latest_effective or r.effective_from > latest_effective[key]:
+            latest_effective[key] = r.effective_from
+            result.setdefault(r.chair_type, {})[r.duration_minutes] = float(r.price)
+    return result
+
+
+def current_chair_rates(db: Session, as_of: datetime.date) -> dict:
+    """Returns {chair_type: {duration_minutes: price}} using whichever rate is actually
+    in effect as of the given date - never a future-dated rate that hasn't kicked in yet."""
+    all_rates = db.query(ChairRate).filter(ChairRate.is_active == True, ChairRate.effective_from <= as_of).all()  # noqa: E712
+    result = {}
+    latest_effective = {}
+    for r in all_rates:
+        key = (r.chair_type, r.duration_minutes)
+        if key not in latest_effective or r.effective_from > latest_effective[key]:
+            latest_effective[key] = r.effective_from
+            result.setdefault(r.chair_type, {})[r.duration_minutes] = float(r.price)
+    return result

@@ -9,6 +9,7 @@ from ..database import get_db
 from ..auth import get_current_user, can
 from ..models import Transaction, TransactionLine, Account, AuditLog
 from ..accounting import next_reference_number, validate_lines, to_decimal
+from .. import accounting as acc_lib
 
 router = APIRouter(prefix="/transactions")
 
@@ -24,7 +25,7 @@ def new_form(ttype: str, request: Request, db: Session = Depends(get_db)):
     if ttype not in TYPE_LABELS:
         return RedirectResponse("/", status_code=303)
 
-    accounts = db.query(Account).filter(Account.is_active == True).order_by(Account.code).all()  # noqa: E712
+    accounts = acc_lib.postable_accounts(db)
     return templates.TemplateResponse("transaction_form.html", {
         "request": request, "user": user, "ttype": ttype, "edit_mode": False,
         "action_url": f"/transactions/new/{ttype}",
@@ -52,7 +53,7 @@ async def create_transaction(
     debits = form_data.getlist("debit[]")
     credits = form_data.getlist("credit[]")
 
-    accounts = db.query(Account).filter(Account.is_active == True).order_by(Account.code).all()  # noqa: E712
+    accounts = acc_lib.postable_accounts(db)
 
     def render_error(msg):
         return templates.TemplateResponse("transaction_form.html", {
@@ -190,7 +191,13 @@ def edit_form(txn_id: int, request: Request, db: Session = Depends(get_db)):
     if txn.status != "ACTIVE":
         return RedirectResponse(f"/transactions/{txn_id}", status_code=303)
 
-    accounts = db.query(Account).filter(Account.is_active == True).order_by(Account.code).all()  # noqa: E712
+    accounts = acc_lib.postable_accounts(db)
+    existing_ids = {a.id for a in accounts}
+    for l in txn.lines:
+        if l.account_id not in existing_ids:
+            accounts.append(l.account)
+            existing_ids.add(l.account_id)
+    accounts.sort(key=lambda a: a.code)
     form = {
         "transaction_date": txn.transaction_date.isoformat(),
         "remarks": txn.remarks or "",
@@ -232,7 +239,13 @@ async def edit_transaction(
     debits = form_data.getlist("debit[]")
     credits = form_data.getlist("credit[]")
 
-    accounts = db.query(Account).filter(Account.is_active == True).order_by(Account.code).all()  # noqa: E712
+    accounts = acc_lib.postable_accounts(db)
+    existing_ids = {a.id for a in accounts}
+    for l in txn.lines:
+        if l.account_id not in existing_ids:
+            accounts.append(l.account)
+            existing_ids.add(l.account_id)
+    accounts.sort(key=lambda a: a.code)
 
     def render_error(msg, confirm_remarks=False):
         return templates.TemplateResponse("transaction_form.html", {

@@ -284,3 +284,31 @@ def daily_view(request: Request, db: Session = Depends(get_db), date_from: str =
         "request": request, "user": user, "lines": lines,
         "date_from": d_from.isoformat(), "date_to": d_to.isoformat(),
     })
+
+
+# ---------------- ACCOUNT LEDGER (search any account, see its history) ----------------
+
+@router.get("/account-ledger")
+def account_ledger_view(request: Request, db: Session = Depends(get_db), account_id: int = None, date_from: str = None, date_to: str = None):
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    all_accounts = db.query(Account).order_by(Account.code).all()
+    parent_ids = {a.parent_id for a in all_accounts if a.parent_id}
+    d_from = _parse(date_from, _today().replace(day=1))
+    d_to = _parse(date_to, _today())
+
+    data = None
+    selected_account = None
+    if account_id:
+        selected_account = db.query(Account).filter(Account.id == account_id).first()
+        if selected_account:
+            data = acc.account_ledger(db, selected_account, d_from, d_to)
+            _log_report(db, user, f"Account Ledger for {selected_account.code} - {selected_account.name}", f"{d_from} to {d_to}")
+
+    return templates.TemplateResponse("reports/account_ledger.html", {
+        "request": request, "user": user, "all_accounts": all_accounts, "parent_ids": parent_ids,
+        "selected_account": selected_account, "data": data,
+        "date_from": d_from.isoformat(), "date_to": d_to.isoformat(),
+    })

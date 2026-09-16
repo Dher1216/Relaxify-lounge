@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Record a Sale - Relaxify Lounge{% endblock %}
+{% block content %}
+<div style="max-width:480px;margin:0 auto">
+  <h2 style="text-align:center">Record a Sale</h2>
+
+  {% if saved_ref %}<div class="success-msg" style="text-align:center">Sale recorded &mdash; {{ saved_ref }}</div>{% endif %}
+  {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+
+  <div class="card">
+    <form method="post" action="/staff/sale" id="saleForm" data-track-changes>
+      <label>Date</label>
+      <input type="date" name="transaction_date" id="txnDate" value="{{ today }}" max="{{ today }}" required>
+
+      <label>Chair</label>
+      <select name="chair_type" id="chairType" required onchange="updateDurations()">
+        <option value="">-- Select Chair --</option>
+        <option value="Deluxe">Deluxe</option>
+        <option value="King">King</option>
+      </select>
+
+      <label>Duration</label>
+      <select name="duration_minutes" id="duration" required onchange="recalcTotal()">
+        <option value="">-- Select Chair First --</option>
+      </select>
+
+      <label style="display:flex;align-items:center;gap:8px;margin-top:6px">
+        <input type="checkbox" name="eye_massager" id="eyeMassager" value="1" style="width:auto;margin:0" onchange="recalcTotal()">
+        Eye Massager Add-on
+      </label>
+
+      <label style="margin-top:14px">Discount</label>
+      <select name="discount_type" id="discountType" required onchange="toggleDiscountFields(); recalcTotal()">
+        <option value="NONE">None</option>
+        <option value="PWD_SENIOR">PWD / Senior Citizen (20%)</option>
+        <option value="PROMO">Promotional</option>
+      </select>
+
+      <div id="pwdField" style="display:none">
+        <label>PWD / Senior ID Number</label>
+        <input type="text" name="pwd_senior_id" id="pwdSeniorId">
+      </div>
+      <div id="promoField" style="display:none">
+        <label>Promo Discount %</label>
+        <input type="number" name="promo_percent" id="promoPercent" min="0" max="100" step="0.01" onchange="recalcTotal()" oninput="recalcTotal()">
+      </div>
+
+      <div class="stat-box" style="margin-top:16px;text-align:center">
+        <div class="label">Total to Collect</div>
+        <div class="value" id="totalDisplay" style="font-size:2rem">₱0.00</div>
+      </div>
+
+      <button type="submit" style="width:100%;margin-top:16px">Submit Sale</button>
+    </form>
+  </div>
+</div>
+
+<script>
+const rateMap = {{ rate_map | tojson }};
+const settings = {
+  shortThreshold: {{ settings.get('eye_massager_short_threshold', 15) }},
+  freeThreshold: {{ settings.get('eye_massager_free_threshold', 30) }},
+  shortPrice: {{ settings.get('eye_massager_short_price', 20) }}
+};
+
+function updateDurations() {
+  const chair = document.getElementById('chairType').value;
+  const durSelect = document.getElementById('duration');
+  durSelect.innerHTML = '';
+  if (!chair || !rateMap[chair]) {
+    durSelect.innerHTML = '<option value="">-- Select Chair First --</option>';
+    recalcTotal();
+    return;
+  }
+  const durations = Object.keys(rateMap[chair]).map(Number).sort((a, b) => a - b);
+  durSelect.innerHTML = '<option value="">-- Select Duration --</option>';
+  durations.forEach(function (d) {
+    const opt = document.createElement('option');
+    opt.value = d;
+    opt.textContent = d + ' min - ₱' + rateMap[chair][d].toFixed(2);
+    durSelect.appendChild(opt);
+  });
+  recalcTotal();
+}
+
+function toggleDiscountFields() {
+  const type = document.getElementById('discountType').value;
+  document.getElementById('pwdField').style.display = type === 'PWD_SENIOR' ? 'block' : 'none';
+  document.getElementById('promoField').style.display = type === 'PROMO' ? 'block' : 'none';
+}
+
+function recalcTotal() {
+  const chair = document.getElementById('chairType').value;
+  const duration = parseInt(document.getElementById('duration').value || 0, 10);
+  let base = (chair && rateMap[chair] && rateMap[chair][duration]) ? rateMap[chair][duration] : 0;
+
+  let addon = 0;
+  if (document.getElementById('eyeMassager').checked && duration > 0) {
+    if (duration <= settings.shortThreshold) addon = settings.shortPrice;
+    else if (duration >= settings.freeThreshold) addon = 0;
+    else addon = 0;
+  }
+
+  let gross = base + addon;
+  let discountPct = 0;
+  const discountType = document.getElementById('discountType').value;
+  if (discountType === 'PWD_SENIOR') discountPct = 20;
+  else if (discountType === 'PROMO') discountPct = parseFloat(document.getElementById('promoPercent').value || 0);
+
+  const discountAmt = gross * (discountPct / 100);
+  const total = gross - discountAmt;
+  document.getElementById('totalDisplay').innerText = '₱' + total.toFixed(2);
+}
+
+document.querySelectorAll('#duration').forEach(function (el) { el.addEventListener('change', recalcTotal); });
+recalcTotal();
+</script>
+{% endblock %}

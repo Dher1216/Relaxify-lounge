@@ -156,6 +156,33 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #333; whi
 th { color: var(--gold-bright); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; }
 tr:hover td { background: rgba(201,162,75,0.06); }
 .table-wrap { overflow-x: auto; }
+
+.scroll-hint-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--charcoal-2);
+  border: 1px solid var(--gold);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  color: var(--gold-bright);
+}
+.scroll-hint-bar + .table-wrap { border-radius: 0 0 8px 8px; overflow: hidden; overflow-x: auto; }
+.scroll-hint-label { flex: 1; text-align: center; color: #999; }
+.scroll-hint-btn {
+  background: transparent;
+  border: 1px solid var(--gold);
+  color: var(--gold-bright);
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.scroll-hint-btn:hover { background: var(--charcoal); }
+@media (max-width: 600px) { .scroll-hint-label { display: none; } }
 .text-right { text-align: right; }
 .amount-debit { color: #90caf9; }
 .amount-credit { color: #ffcc80; }
