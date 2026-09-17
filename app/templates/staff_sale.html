@@ -1,14 +1,31 @@
 {% extends "base.html" %}
 {% block title %}Record a Sale - Relaxify Lounge{% endblock %}
+{% block head %}
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#0b0b0c">
+<script src="/static/js/staff-offline.js" defer></script>
+{% endblock %}
 {% block content %}
 <div style="max-width:480px;margin:0 auto">
   <h2 style="text-align:center">Record a Sale</h2>
 
   {% if saved_ref %}<div class="success-msg" style="text-align:center">Sale recorded &mdash; {{ saved_ref }}</div>{% endif %}
   {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+  <div id="offlineBanner" class="error-msg" style="display:none;background:rgba(201,162,75,0.15);border-color:var(--gold);color:var(--gold-bright);text-align:center">
+    No connection right now &mdash; this sale will save on your phone and send automatically once you're back online.
+  </div>
+  <div id="pendingBanner" class="success-msg" style="display:none;text-align:center"></div>
+
+  <div class="card" style="text-align:center">
+    <div class="label" style="font-size:0.75rem;color:var(--gold);text-transform:uppercase">Sales Recorded Today</div>
+    <div style="font-size:1.8rem;font-weight:700;color:var(--cream)" id="todaysSalesCount">{{ todays_sales|length }}</div>
+  </div>
 
   <div class="card">
     <form method="post" action="/staff/sale" id="saleForm" data-track-changes>
+      <input type="hidden" name="client_token" id="clientToken">
+      <input type="hidden" name="occurred_at" id="occurredAt">
+
       <label>Date</label>
       <input type="date" name="transaction_date" id="txnDate" value="{{ today }}" max="{{ today }}" required>
 
@@ -50,9 +67,26 @@
         <div class="value" id="totalDisplay" style="font-size:2rem">₱0.00</div>
       </div>
 
-      <button type="submit" style="width:100%;margin-top:16px">Submit Sale</button>
+      <button type="submit" id="submitBtn" style="width:100%;margin-top:16px">Submit Sale</button>
     </form>
   </div>
+
+  {% if todays_sales %}
+  <div class="card">
+    <h3 style="font-size:1rem">Your Sales Today</h3>
+    <div class="table-wrap">
+    <table>
+      <tr><th>Time</th><th>Details</th></tr>
+      {% for t in todays_sales %}
+      <tr>
+        <td>{{ (t.occurred_at or t.created_at) | manila_datetime('%I:%M %p') }}</td>
+        <td>{{ t.remarks }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    </div>
+  </div>
+  {% endif %}
 </div>
 
 <script>
@@ -111,6 +145,40 @@ function recalcTotal() {
   const total = gross - discountAmt;
   document.getElementById('totalDisplay').innerText = '₱' + total.toFixed(2);
 }
+
+function genToken() {
+  if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+  return 'tok-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+}
+
+// Generate a fresh idempotency token as soon as the page loads, and again after
+// any successful submit - so every distinct sale gets its own unique token, but
+// a retry/resubmit of the SAME attempt (e.g. a slow network causing a second
+// click, or an offline queue re-sending) always carries the SAME token and can
+// never create a duplicate transaction.
+document.getElementById('clientToken').value = genToken();
+
+document.getElementById('saleForm').addEventListener('submit', function (e) {
+  document.getElementById('occurredAt').value = new Date().toISOString();
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.innerText = 'Submitting...';
+  if (!navigator.onLine) {
+    // Offline handling (queueing + background sync) lives in staff-offline.js
+    e.preventDefault();
+    if (window.queueOfflineSale) {
+      window.queueOfflineSale(new FormData(this)).then(function () {
+        document.getElementById('offlineBanner').style.display = 'block';
+        btn.disabled = false;
+        btn.innerText = 'Submit Sale';
+        document.getElementById('clientToken').value = genToken();
+      });
+    } else {
+      btn.disabled = false;
+      btn.innerText = 'Submit Sale';
+    }
+  }
+});
 
 document.querySelectorAll('#duration').forEach(function (el) { el.addEventListener('change', recalcTotal); });
 recalcTotal();

@@ -13,7 +13,7 @@ from .. import accounting as acc_lib
 
 router = APIRouter(prefix="/transactions")
 
-TYPE_LABELS = {"RECEIPT": "Receipt", "DISBURSEMENT": "Disbursement"}
+TYPE_LABELS = {"RECEIPT": "Receipt", "DISBURSEMENT": "Disbursement", "TRANSFER": "Fund Transfer"}
 
 
 @router.get("/new/{ttype}")

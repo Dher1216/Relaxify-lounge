@@ -274,7 +274,7 @@ def daily_view(request: Request, db: Session = Depends(get_db), date_from: str =
             ws.append([
                 t.transaction_date.strftime("%m/%d/%Y"), t.reference_number, t.transaction_type,
                 l.account.code, l.account.name, float(l.debit), float(l.credit),
-                t.remarks or "", t.created_by, t.status, t.created_at.strftime("%m/%d/%Y %H:%M"),
+                t.remarks or "", t.created_by, t.status, (t.created_at + datetime.timedelta(hours=8)).strftime("%m/%d/%Y %H:%M"),
             ])
         _log_report(db, user, "Daily Transaction Report", f"{d_from} to {d_to}")
         return _xlsx_response(wb, f"DailyTransactions_{d_from}_to_{d_to}.xlsx")

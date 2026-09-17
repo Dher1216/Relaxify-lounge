@@ -5,7 +5,7 @@ from sqlalchemy import func
 
 from .models import Transaction, TransactionLine, Account, Counter, ChairRate
 
-PREFIXES = {"RECEIPT": "RCPT", "DISBURSEMENT": "DISB"}
+PREFIXES = {"RECEIPT": "RCPT", "DISBURSEMENT": "DISB", "TRANSFER": "XFER"}
 
 
 def get_descendant_ids(db: Session, account: Account) -> list[int]:

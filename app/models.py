@@ -43,7 +43,7 @@ class Transaction(Base):
     id = Column(Integer, primary_key=True)
     reference_number = Column(String(30), unique=True, nullable=False, index=True)
     transaction_date = Column(Date, nullable=False)
-    transaction_type = Column(String(20), nullable=False)  # RECEIPT, DISBURSEMENT
+    transaction_type = Column(String(20), nullable=False)  # RECEIPT, DISBURSEMENT, TRANSFER
     remarks = Column(Text, nullable=True)
     status = Column(String(10), nullable=False, default="ACTIVE")  # ACTIVE / VOIDED
     void_reason = Column(String(255), nullable=True)
@@ -51,6 +51,8 @@ class Transaction(Base):
     created_at = Column(DateTime, default=now_utc)
     updated_by = Column(String(50), nullable=True)
     updated_at = Column(DateTime, nullable=True)
+    client_token = Column(String(64), unique=True, nullable=True, index=True)
+    occurred_at = Column(DateTime, nullable=True)
 
     lines = relationship("TransactionLine", back_populates="transaction", cascade="all, delete-orphan")
 

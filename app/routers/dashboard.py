@@ -30,21 +30,23 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     todays_disbursements = [t for t in todays_txns if t.transaction_type == "DISBURSEMENT"]
 
     def cash_movement_for(txns):
-        """Total cash debited (received) or credited (paid) across the cash lines of these transactions."""
+        """Net cash movement (debit minus credit) across the cash lines of these
+        transactions. Using the NET, not summing debit+credit separately, matters
+        specifically for any transaction that touches two cash accounts at once
+        (e.g. a transfer between Cash on Hand and Cash in Bank) - summing both
+        sides separately would double-count a movement that's actually zero-sum
+        from the business's perspective."""
         if not txns:
             return Decimal("0.00")
         txn_ids = [t.id for t in txns]
-        q = (
-            db.query(
-                func.coalesce(func.sum(TransactionLine.debit), 0),
-                func.coalesce(func.sum(TransactionLine.credit), 0),
-            )
+        net = (
+            db.query(func.coalesce(func.sum(TransactionLine.debit - TransactionLine.credit), 0))
             .join(Account, Account.id == TransactionLine.account_id)
             .filter(TransactionLine.transaction_id.in_(txn_ids))
             .filter(Account.name.ilike("%cash%"))
+            .scalar()
         )
-        d, c = q.first()
-        return Decimal(d) + Decimal(c)
+        return abs(Decimal(net))
 
     todays_receipts_cash = cash_movement_for(todays_receipts)
     todays_disbursements_cash = cash_movement_for(todays_disbursements)

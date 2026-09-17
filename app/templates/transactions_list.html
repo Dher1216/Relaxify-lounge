@@ -13,6 +13,7 @@
         <option value="">All</option>
         <option value="RECEIPT" {% if filters.ttype == 'RECEIPT' %}selected{% endif %}>Receipt</option>
         <option value="DISBURSEMENT" {% if filters.ttype == 'DISBURSEMENT' %}selected{% endif %}>Disbursement</option>
+        <option value="TRANSFER" {% if filters.ttype == 'TRANSFER' %}selected{% endif %}>Fund Transfer</option>
       </select>
     </div>
     <div>
