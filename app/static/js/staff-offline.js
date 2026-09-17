@@ -2,7 +2,10 @@
 // submission locally when there's no connection (window.queueOfflineSale).
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/static/service-worker.js").catch(function (err) {
+  // Registered from the site root (not /static/) so its default scope covers the
+  // whole app, including /staff/sale - a service worker can only control pages
+  // under the same path it's served from unless it's served from root.
+  navigator.serviceWorker.register("/service-worker.js", { scope: "/" }).catch(function (err) {
     console.warn("Service worker registration failed:", err);
   });
 }

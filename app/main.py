@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, FileResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -46,6 +46,17 @@ app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, same_site="lax")
 
 BASE_DIR = os.path.dirname(__file__)
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
+
+
+@app.get("/service-worker.js")
+def service_worker():
+    # Served from the site ROOT (not /static/) on purpose: a service worker can only
+    # control pages under the same folder it's served from by default, and it needs
+    # to control /staff/sale specifically for offline mode to actually work there.
+    return FileResponse(
+        os.path.join(BASE_DIR, "static", "service-worker.js"),
+        media_type="application/javascript",
+    )
 
 # Create tables on boot if they don't exist yet, then seed the Chart of Accounts and
 # the initial users if they aren't already there. Safe to run on every startup: seed.run()
