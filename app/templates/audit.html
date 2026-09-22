@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Audit Trail - Relaxify Lounge{% endblock %}
+{% block content %}
+<h2>History / Audit Trail</h2>
+
+<div class="card">
+  <form method="get" action="/audit" class="grid grid-3">
+    <div><label>Search action text</label><input type="text" name="q" value="{{ q }}"></div>
+    <div><label>Username</label><input type="text" name="username" value="{{ username }}"></div>
+    <div style="align-self:end"><button type="submit">Filter</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+  <table>
+    <tr><th>Timestamp</th><th>User</th><th>Module</th><th>Action</th></tr>
+    {% for log in logs %}
+    <tr>
+      <td>{{ log.timestamp | manila_datetime }}</td>
+      <td>{{ log.username }}</td>
+      <td>{{ log.module }}</td>
+      <td>{{ log.action }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">No audit records found.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+  <p style="font-size:0.8rem;color:#999;margin-top:10px">Showing page {{ page }} of {{ total_pages }} &middot; {{ total }} total records</p>
+
+  {% if total_pages > 1 %}
+  <div class="no-print" style="display:flex;gap:6px;align-items:center;justify-content:center;margin-top:14px;flex-wrap:wrap">
+    {% set base_qs = "q=" + (q or "") + "&username=" + (username or "") %}
+    <a class="btn btn-secondary" style="padding:6px 12px;font-size:0.8rem;{{ 'opacity:0.4;pointer-events:none;' if page <= 1 }}" href="/audit?{{ base_qs }}&page={{ page - 1 }}">&laquo; Previous</a>
+    {% for p in range(1, total_pages + 1) %}
+      {% if p == page %}
+      <span class="btn" style="padding:6px 12px;font-size:0.8rem">{{ p }}</span>
+      {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+      <a class="btn btn-secondary" style="padding:6px 12px;font-size:0.8rem" href="/audit?{{ base_qs }}&page={{ p }}">{{ p }}</a>
+      {% elif p == page - 3 or p == page + 3 %}
+      <span style="color:#666;padding:0 4px">&hellip;</span>
+      {% endif %}
+    {% endfor %}
+    <a class="btn btn-secondary" style="padding:6px 12px;font-size:0.8rem;{{ 'opacity:0.4;pointer-events:none;' if page >= total_pages }}" href="/audit?{{ base_qs }}&page={{ page + 1 }}">Next &raquo;</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

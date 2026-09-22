@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Account Codes - Relaxify Lounge{% endblock %}
+{% block content %}
+<h2>Account Codes (Chart of Accounts)</h2>
+{% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <form method="get" action="/accounts">
+    <input type="text" name="q" placeholder="Search code or name..." value="{{ q }}" style="max-width:300px;display:inline-block">
+    <button type="submit">Search</button>
+  </form>
+</div>
+
+{% if can_edit %}
+<div class="card">
+  <h3>Add Account</h3>
+  <form method="post" action="/accounts/add" class="grid grid-3">
+    <div><label>Classification (first)</label>
+      <select name="account_type" required>
+        {% for t in account_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+      </select>
+    </div>
+    <div><label>Account Code</label><input type="text" name="code" required></div>
+    <div><label>Account Name</label><input type="text" name="name" required></div>
+    <div><label>Category</label><input type="text" name="category" placeholder="e.g. Current Assets"></div>
+    <div><label>Normal Balance</label>
+      <select name="normal_balance" required><option value="Debit">Debit</option><option value="Credit">Credit</option></select>
+    </div>
+    <div><label>Notes</label><input type="text" name="notes"></div>
+    <div>
+      <label>Parent Account (optional)</label>
+      <select name="parent_id">
+        <option value="">-- None (top-level account) --</option>
+        {% for p in parent_options %}<option value="{{ p.id }}">{{ p.code }} - {{ p.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div style="align-self:end;display:flex;align-items:center;gap:8px">
+      <input type="checkbox" name="is_cash_account" value="1" style="width:auto;margin:0" id="newIsCash">
+      <label for="newIsCash" style="margin:0">This is a real cash/bank/e-wallet account</label>
+    </div>
+    <div style="align-self:end"><button type="submit">Add Account</button></div>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <p style="font-size:0.8rem;color:#999;margin-bottom:10px">Sub-accounts are shown indented under their parent. Transactions can only be posted to accounts that don't have sub-accounts of their own &mdash; parent accounts exist purely to show a rolled-up total on reports and in the Account Ledger search. Accounts marked <span class="badge badge-active" style="padding:1px 6px">CASH</span> are the ones counted in dashboard cash totals and the Statement of Cash Flows &mdash; this is set explicitly per account, not guessed from the account's name, so an account like "GCash Loan Payable" is never mistaken for an actual cash account just because its name contains the letters "cash".</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Code</th><th>Name</th><th>Type</th><th>Category</th><th>Normal Balance</th><th>Status</th>{% if can_edit %}<th>Actions</th>{% endif %}</tr>
+    {% for acc, depth in ordered_accounts %}
+    <tr>
+      <td>{{ acc.code }}</td>
+      <td>{{ "&nbsp;&nbsp;&nbsp;&nbsp;\u2514 "|safe if depth else "" }}{{ acc.name }}{% if acc.is_cash_account %} <span class="badge badge-active" style="padding:1px 6px;font-size:0.65rem">CASH</span>{% endif %}</td>
+      <td>{{ acc.account_type }}</td>
+      <td>{{ acc.category or '—' }}</td>
+      <td>{{ acc.normal_balance }}</td>
+      <td><span class="badge {{ 'badge-active' if acc.is_active else 'badge-voided' }}">{{ 'ACTIVE' if acc.is_active else 'INACTIVE' }}</span></td>
+      {% if can_edit %}
+      <td>
+        <button type="button" class="btn-secondary" style="padding:4px 10px;font-size:0.75rem" onclick="document.getElementById('edit-{{ acc.id }}').classList.add('show')">Edit</button>
+        <form method="post" action="/accounts/{{ acc.id }}/toggle" style="display:inline">
+          <button type="submit" class="btn-secondary" style="padding:4px 10px;font-size:0.75rem"
+            onclick="return confirm('Are you sure you want to {{ 'deactivate' if acc.is_active else 'activate' }} this account?')">
+            {{ 'Deactivate' if acc.is_active else 'Activate' }}
+          </button>
+        </form>
+
+        <div class="modal-overlay" id="edit-{{ acc.id }}">
+          <div class="modal-box" style="max-width:420px;text-align:left">
+            <h3 style="text-align:center">Edit Account</h3>
+            <form method="post" action="/accounts/{{ acc.id }}/edit">
+              <label>Account Code</label>
+              <input type="text" name="code" value="{{ acc.code }}" required>
+              <label>Account Name</label>
+              <input type="text" name="name" value="{{ acc.name }}" required>
+              <label>Classification</label>
+              <select name="account_type" required>
+                {% for t in account_types %}<option value="{{ t }}" {% if t == acc.account_type %}selected{% endif %}>{{ t }}</option>{% endfor %}
+              </select>
+              <label>Category</label>
+              <input type="text" name="category" value="{{ acc.category or '' }}">
+              <label>Normal Balance</label>
+              <select name="normal_balance" required>
+                <option value="Debit" {% if acc.normal_balance == "Debit" %}selected{% endif %}>Debit</option>
+                <option value="Credit" {% if acc.normal_balance == "Credit" %}selected{% endif %}>Credit</option>
+              </select>
+              <label>Notes</label>
+              <input type="text" name="notes" value="{{ acc.notes or '' }}">
+              <label>Parent Account (optional)</label>
+              <select name="parent_id">
+                <option value="">-- None (top-level account) --</option>
+                {% for p in parent_options %}
+                  {% if p.id != acc.id %}
+                  <option value="{{ p.id }}" {% if acc.parent_id == p.id %}selected{% endif %}>{{ p.code }} - {{ p.name }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+                <input type="checkbox" name="is_cash_account" value="1" style="width:auto;margin:0" id="editIsCash-{{ acc.id }}" {% if acc.is_cash_account %}checked{% endif %}>
+                <label for="editIsCash-{{ acc.id }}" style="margin:0">This is a real cash/bank/e-wallet account</label>
+              </div>
+              <div class="actions">
+                <button type="submit">Save Changes</button>
+                <button type="button" class="btn-secondary" onclick="document.getElementById('edit-{{ acc.id }}').classList.remove('show')">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+{% endblock %}

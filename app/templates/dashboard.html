@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Relaxify Lounge{% endblock %}
+{% block content %}
+<h2 style="color:var(--gold-bright)">Dashboard &mdash; {{ today.strftime('%B %d, %Y') }}</h2>
+
+<div class="grid grid-4">
+  <a href="/transactions?sales_only=1&date_from={{ today.isoformat() }}&date_to={{ today.isoformat() }}" style="text-decoration:none;color:inherit;display:block">
+  <div class="stat-box" style="cursor:pointer">
+    <div class="label">Total Sales Today</div>
+    <div class="value">₱{{ "{:,.2f}".format(todays_sales_amount) }}</div>
+    <div style="font-size:0.75rem;color:#999;margin-top:4px">{{ todays_sales_count }} sale{{ "s" if todays_sales_count != 1 else "" }} &middot; click to view</div>
+  </div>
+  </a>
+  <a href="/transactions?ttype=RECEIPT&date_from={{ today.isoformat() }}&date_to={{ today.isoformat() }}" style="text-decoration:none;color:inherit;display:block">
+  <div class="stat-box" style="cursor:pointer">
+    <div class="label">Today's Receipts</div>
+    <div class="value">₱{{ "{:,.2f}".format(todays_receipts_cash) }}</div>
+    <div style="font-size:0.75rem;color:#999;margin-top:4px">{{ todays_receipts|length }} transaction{{ "s" if todays_receipts|length != 1 else "" }} &middot; click to view</div>
+  </div>
+  </a>
+  <a href="/transactions?ttype=DISBURSEMENT&date_from={{ today.isoformat() }}&date_to={{ today.isoformat() }}" style="text-decoration:none;color:inherit;display:block">
+  <div class="stat-box" style="cursor:pointer">
+    <div class="label">Today's Disbursements</div>
+    <div class="value">₱{{ "{:,.2f}".format(todays_disbursements_cash) }}</div>
+    <div style="font-size:0.75rem;color:#999;margin-top:4px">{{ todays_disbursements|length }} transaction{{ "s" if todays_disbursements|length != 1 else "" }} &middot; click to view</div>
+  </div>
+  </a>
+  <div class="stat-box">
+    <div class="label">Month Net Income</div>
+    <div class="value">₱{{ "{:,.2f}".format(month_net_income) }}</div>
+  </div>
+</div>
+
+<div class="grid grid-2" style="margin-top:20px">
+  <div class="stat-box">
+    <div class="label">Month Revenue</div>
+    <div class="value">₱{{ "{:,.2f}".format(month_revenue) }}</div>
+  </div>
+  <div class="stat-box">
+    <div class="label">Month Expenses</div>
+    <div class="value">₱{{ "{:,.2f}".format(month_expenses) }}</div>
+  </div>
+</div>
+
+<div class="grid grid-2" style="margin-top:20px">
+  {% if cash_breakdown %}
+    {% for c in cash_breakdown %}
+    <div class="stat-box">
+      <div class="label">{{ c.name }}</div>
+      <div class="value">₱{{ "{:,.2f}".format(c.balance) }}</div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="stat-box">
+    <div class="label">Total Cash on Hand / In Bank</div>
+    <div class="value">₱{{ "{:,.2f}".format(cash_balance) }}</div>
+  </div>
+  {% endif %}
+</div>
+
+{% if cash_breakdown|length > 1 %}
+<div class="grid grid-2" style="margin-top:20px">
+  <div class="stat-box" style="border-color:var(--gold-bright)">
+    <div class="label">Total Cash (All Accounts Combined)</div>
+    <div class="value">₱{{ "{:,.2f}".format(cash_balance) }}</div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="margin-top:24px">
+  <h3>Recent Transactions</h3>
+  {% if recent %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Date</th><th>Time</th><th>Reference</th><th>Type</th><th>Status</th><th>Remarks</th><th>Entered By</th></tr>
+    {% for t in recent %}
+    <tr>
+      <td>{{ t.transaction_date.strftime('%m/%d/%Y') }}</td>
+      <td>{{ (t.occurred_at or t.created_at) | manila_datetime('%I:%M %p') }}</td>
+      <td><a href="/transactions/{{ t.id }}">{{ t.reference_number }}</a></td>
+      <td>{{ t.transaction_type }}</td>
+      <td><span class="badge {{ 'badge-active' if t.status == 'ACTIVE' else 'badge-voided' }}">{{ t.status }}</span></td>
+      <td>{{ t.remarks or '—' }}</td>
+      <td>{{ t.created_by }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% else %}
+  <p>No transactions recorded.</p>
+  {% endif %}
+</div>
+{% endblock %}

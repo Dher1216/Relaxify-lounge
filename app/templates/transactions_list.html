@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ page_title }} - Relaxify Lounge{% endblock %}
+{% block content %}
+<h2>{{ page_title }}</h2>
+{% if sales_only == "1" %}<p style="color:#999;font-size:0.85rem;margin-top:-8px">Automatically detected sales for {{ filters.date_from or 'today' }}{% if filters.date_to and filters.date_to != filters.date_from %} to {{ filters.date_to }}{% endif %} &mdash; based on which accounts were actually credited, not how the transaction was labeled.</p>{% endif %}
+
+<div class="card">
+  <form method="get" action="/transactions" class="grid grid-4">
+    {% if sales_only == "1" %}<input type="hidden" name="sales_only" value="1">{% endif %}
+    <div><label>From</label><input type="date" name="date_from" value="{{ filters.date_from or '' }}"></div>
+    <div><label>To</label><input type="date" name="date_to" value="{{ filters.date_to or '' }}"></div>
+    <div>
+      <label>Type</label>
+      <select name="ttype">
+        <option value="">All</option>
+        <option value="RECEIPT" {% if filters.ttype == 'RECEIPT' %}selected{% endif %}>Receipt</option>
+        <option value="DISBURSEMENT" {% if filters.ttype == 'DISBURSEMENT' %}selected{% endif %}>Disbursement</option>
+        <option value="TRANSFER" {% if filters.ttype == 'TRANSFER' %}selected{% endif %}>Fund Transfer</option>
+      </select>
+    </div>
+    <div>
+      <label>Status</label>
+      <select name="status">
+        <option value="">All</option>
+        <option value="ACTIVE" {% if filters.status == 'ACTIVE' %}selected{% endif %}>Active</option>
+        <option value="VOIDED" {% if filters.status == 'VOIDED' %}selected{% endif %}>Voided</option>
+      </select>
+    </div>
+    <div style="grid-column: span 3">
+      <label>Search Reference #</label>
+      <input type="text" name="q" value="{{ filters.q or '' }}">
+    </div>
+    <div style="align-self:end"><button type="submit">Filter</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+  <table>
+    <tr><th>Date</th><th>Reference</th><th>Type</th><th class="text-right">Amount</th><th>Status</th><th>Remarks</th><th>Entered By</th></tr>
+    {% for t in txns %}
+    <tr>
+      <td>{{ t.transaction_date.strftime('%m/%d/%Y') }}</td>
+      <td><a href="/transactions/{{ t.id }}">{{ t.reference_number }}</a></td>
+      <td>{{ t.transaction_type }}</td>
+      <td class="text-right">₱{{ "{:,.2f}".format(txn_amounts.get(t.id, 0)) }}</td>
+      <td><span class="badge {{ 'badge-active' if t.status == 'ACTIVE' else 'badge-voided' }}">{{ t.status }}</span></td>
+      <td>{{ t.remarks or '—' }}</td>
+      <td>{{ t.created_by }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7">No transactions recorded.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+  <p style="font-size:0.8rem;color:#999;margin-top:10px">Showing page {{ page }} of {{ total_pages }} &middot; {{ total }} total transactions</p>
+
+  {% if total_pages > 1 %}
+  <div class="no-print" style="display:flex;gap:6px;align-items:center;justify-content:center;margin-top:14px;flex-wrap:wrap">
+    {% set base_qs = "date_from=" + (filters.date_from or "") + "&date_to=" + (filters.date_to or "") + "&ttype=" + (filters.ttype or "") + "&status=" + (filters.status or "") + "&q=" + (filters.q or "") + (("&sales_only=1") if sales_only == "1" else "") %}
+    <a class="btn btn-secondary {{ 'disabled' if page <= 1 }}" style="padding:6px 12px;font-size:0.8rem;{{ 'opacity:0.4;pointer-events:none;' if page <= 1 }}" href="/transactions?{{ base_qs }}&page={{ page - 1 }}">&laquo; Previous</a>
+    {% for p in range(1, total_pages + 1) %}
+      {% if p == page %}
+      <span class="btn" style="padding:6px 12px;font-size:0.8rem">{{ p }}</span>
+      {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+      <a class="btn btn-secondary" style="padding:6px 12px;font-size:0.8rem" href="/transactions?{{ base_qs }}&page={{ p }}">{{ p }}</a>
+      {% elif p == page - 3 or p == page + 3 %}
+      <span style="color:#666;padding:0 4px">&hellip;</span>
+      {% endif %}
+    {% endfor %}
+    <a class="btn btn-secondary" style="padding:6px 12px;font-size:0.8rem;{{ 'opacity:0.4;pointer-events:none;' if page >= total_pages }}" href="/transactions?{{ base_qs }}&page={{ page + 1 }}">Next &raquo;</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

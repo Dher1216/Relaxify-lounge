@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Relaxify Lounge</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="bg-wrap">
+  <div class="login-screen">
+    <div class="login-card">
+      <img src="/static/img/logo.png" alt="Relaxify Lounge" class="logo">
+      <h1>RELAXIFY LOUNGE</h1>
+      <p class="tagline">RELAX MORE &bull; WORRY LESS</p>
+
+      {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+
+      <form method="post" action="/login" id="loginForm">
+        <label>Username</label>
+        <input type="text" name="username" required autofocus>
+        <label>Password</label>
+        <input type="password" name="password" required>
+        <button type="submit" id="loginBtn" style="width:100%">Login</button>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+  document.getElementById('loginForm').addEventListener('submit', function () {
+    const btn = document.getElementById('loginBtn');
+    btn.disabled = true;
+    btn.innerText = 'Logging in...';
+  });
+</script>
+</body>
+</html>

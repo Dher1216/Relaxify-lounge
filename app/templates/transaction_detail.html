@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ txn.reference_number }} - Relaxify Lounge{% endblock %}
+{% block content %}
+{% if saved %}<div class="success-msg">Transaction saved successfully.</div>{% endif %}
+
+<h2>{{ txn.reference_number }} <span class="badge {{ 'badge-active' if txn.status == 'ACTIVE' else 'badge-voided' }}">{{ txn.status }}</span></h2>
+
+<div class="card">
+  <div class="grid grid-3">
+    <div><strong>Date:</strong> {{ txn.transaction_date.strftime('%m/%d/%Y') }}</div>
+    <div><strong>Type:</strong> {{ txn.transaction_type.title() }}</div>
+    <div><strong>Entered By:</strong> {{ txn.created_by }}</div>
+  </div>
+  <p style="margin-top:10px"><strong>Remarks:</strong> {{ txn.remarks or '(none)' }}</p>
+
+  <div class="table-wrap">
+  <table>
+    <tr><th>Account Code</th><th>Account Name</th><th class="text-right">Debit</th><th class="text-right">Credit</th></tr>
+    {% for l in txn.lines %}
+    <tr>
+      <td>{{ l.account.code }}</td>
+      <td>{{ l.account.name }}</td>
+      <td class="text-right amount-debit">{{ "₱{:,.2f}".format(l.debit) if l.debit else "" }}</td>
+      <td class="text-right amount-credit">{{ "₱{:,.2f}".format(l.credit) if l.credit else "" }}</td>
+    </tr>
+    {% endfor %}
+    <tr style="font-weight:700">
+      <td colspan="2">TOTAL</td>
+      <td class="text-right">₱{{ "{:,.2f}".format(total_debit) }}</td>
+      <td class="text-right">₱{{ "{:,.2f}".format(total_credit) }}</td>
+    </tr>
+  </table>
+  </div>
+
+  {% if txn.status == "VOIDED" %}
+  <p style="margin-top:10px;color:#ff8a80"><strong>Void reason:</strong> {{ txn.void_reason or '(none provided)' }}</p>
+  {% endif %}
+
+  <div class="no-print" style="margin-top:16px">
+    <button onclick="window.print()">Print</button>
+    <a href="/transactions" class="btn btn-secondary" style="margin-left:8px">Back to List</a>
+    {% if txn.status == "ACTIVE" and can_edit %}
+    <a href="/transactions/{{ txn.id }}/edit" class="btn" style="margin-left:8px">Edit Transaction</a>
+    {% endif %}
+    {% if txn.status == "ACTIVE" %}
+    <button class="btn-danger" style="margin-left:8px" onclick="document.getElementById('voidModal').classList.add('show')">Void Transaction</button>
+    {% endif %}
+  </div>
+</div>
+
+<div class="modal-overlay" id="voidModal">
+  <div class="modal-box">
+    <h3>Are you sure you want to void this transaction?</h3>
+    <form method="post" action="/transactions/{{ txn.id }}/void">
+      <label>Reason (optional)</label>
+      <textarea name="reason" rows="2"></textarea>
+      <div class="actions">
+        <button type="submit">YES, VOID</button>
+        <button type="button" class="btn-secondary" onclick="document.getElementById('voidModal').classList.remove('show')">NO</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,11 @@
+{
+  "name": "Relaxify Lounge - Record a Sale",
+  "short_name": "Relaxify Sales",
+  "start_url": "/staff/sale",
+  "display": "standalone",
+  "background_color": "#0b0b0c",
+  "theme_color": "#0b0b0c",
+  "icons": [
+    { "src": "/static/img/logo.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

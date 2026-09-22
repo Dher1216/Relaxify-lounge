@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}Record a Sale - Relaxify Lounge{% endblock %}
+{% block head %}
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#0b0b0c">
+<script src="/static/js/staff-offline.js" defer></script>
+{% endblock %}
+{% block content %}
+<div style="max-width:480px;margin:0 auto">
+  <h2 style="text-align:center">Record a Sale</h2>
+
+  {% if saved_ref %}<div class="success-msg" style="text-align:center">Sale recorded &mdash; {{ saved_ref }}</div>{% endif %}
+  {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+  <div id="offlineBanner" class="error-msg" style="display:none;background:rgba(201,162,75,0.15);border-color:var(--gold);color:var(--gold-bright);text-align:center">
+    No connection right now &mdash; this sale will save on your phone and send automatically once you're back online.
+  </div>
+  <div id="pendingBanner" class="success-msg" style="display:none;text-align:center"></div>
+
+  <div class="card" style="text-align:center">
+    <div class="label" style="font-size:0.75rem;color:var(--gold);text-transform:uppercase">Sales Recorded Today</div>
+    <div style="font-size:1.8rem;font-weight:700;color:var(--cream)" id="todaysSalesCount">{{ todays_sales_count }}</div>
+  </div>
+
+  <div class="card">
+    <form method="post" action="/staff/sale" id="saleForm" data-track-changes>
+      <input type="hidden" name="client_token" id="clientToken">
+      <input type="hidden" name="occurred_at" id="occurredAt">
+
+      <label>Date</label>
+      <input type="date" name="transaction_date" id="txnDate" value="{{ today }}" max="{{ today }}" required>
+
+      <label>Chair</label>
+      <select name="chair_type" id="chairType" required onchange="updateDurations()">
+        <option value="">-- Select Chair --</option>
+        <option value="Deluxe">Deluxe</option>
+        <option value="King">King</option>
+      </select>
+
+      <label>Duration</label>
+      <select name="duration_minutes" id="duration" required onchange="recalcTotal()">
+        <option value="">-- Select Chair First --</option>
+      </select>
+
+      <label style="display:flex;align-items:center;gap:8px;margin-top:6px">
+        <input type="checkbox" name="eye_massager" id="eyeMassager" value="1" style="width:auto;margin:0" onchange="recalcTotal()">
+        Eye Massager Add-on
+      </label>
+
+      <label style="margin-top:14px">Discount</label>
+      <select name="discount_type" id="discountType" required onchange="toggleDiscountFields(); recalcTotal()">
+        <option value="NONE">None</option>
+        <option value="PWD_SENIOR">PWD / Senior Citizen (20%)</option>
+        <option value="PROMO">Promotional</option>
+      </select>
+
+      <div id="pwdField" style="display:none">
+        <label>PWD / Senior ID Number</label>
+        <input type="text" name="pwd_senior_id" id="pwdSeniorId">
+      </div>
+      <div id="promoField" style="display:none">
+        <label>Promo Discount %</label>
+        <input type="number" name="promo_percent" id="promoPercent" min="0" max="100" step="0.01" onchange="recalcTotal()" oninput="recalcTotal()">
+      </div>
+
+      <div class="stat-box" style="margin-top:16px;text-align:center">
+        <div class="label">Total to Collect</div>
+        <div class="value" id="totalDisplay" style="font-size:2rem">₱0.00</div>
+      </div>
+
+      <button type="submit" id="submitBtn" style="width:100%;margin-top:16px">Submit Sale</button>
+    </form>
+  </div>
+</div>
+
+{% if deluxe_sales or king_sales %}
+<div style="max-width:900px;margin:20px auto 0">
+  <h3 style="text-align:center;font-size:1rem;color:var(--gold-bright)">Your Sales Today</h3>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3 style="font-size:0.95rem;text-align:center">Deluxe</h3>
+      <div class="table-wrap">
+      <table>
+        <tr><th>Time</th><th>Details</th></tr>
+        {% for t in deluxe_sales %}
+        <tr>
+          <td>{{ (t.occurred_at or t.created_at) | manila_datetime('%I:%M %p') }}</td>
+          <td>{{ t.remarks }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="2" style="color:#999">No Deluxe sales yet</td></tr>
+        {% endfor %}
+      </table>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="font-size:0.95rem;text-align:center">King</h3>
+      <div class="table-wrap">
+      <table>
+        <tr><th>Time</th><th>Details</th></tr>
+        {% for t in king_sales %}
+        <tr>
+          <td>{{ (t.occurred_at or t.created_at) | manila_datetime('%I:%M %p') }}</td>
+          <td>{{ t.remarks }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="2" style="color:#999">No King sales yet</td></tr>
+        {% endfor %}
+      </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script>
+const rateMap = {{ rate_map | tojson }};
+const settings = {
+  shortThreshold: {{ settings.get('eye_massager_short_threshold', 15) }},
+  freeThreshold: {{ settings.get('eye_massager_free_threshold', 30) }},
+  shortPrice: {{ settings.get('eye_massager_short_price', 20) }}
+};
+
+function updateDurations() {
+  const chair = document.getElementById('chairType').value;
+  const durSelect = document.getElementById('duration');
+  durSelect.innerHTML = '';
+  if (!chair || !rateMap[chair]) {
+    durSelect.innerHTML = '<option value="">-- Select Chair First --</option>';
+    recalcTotal();
+    return;
+  }
+  const durations = Object.keys(rateMap[chair]).map(Number).sort((a, b) => a - b);
+  durSelect.innerHTML = '<option value="">-- Select Duration --</option>';
+  durations.forEach(function (d) {
+    const opt = document.createElement('option');
+    opt.value = d;
+    opt.textContent = d + ' min - ₱' + rateMap[chair][d].toFixed(2);
+    durSelect.appendChild(opt);
+  });
+  recalcTotal();
+}
+
+function toggleDiscountFields() {
+  const type = document.getElementById('discountType').value;
+  document.getElementById('pwdField').style.display = type === 'PWD_SENIOR' ? 'block' : 'none';
+  document.getElementById('promoField').style.display = type === 'PROMO' ? 'block' : 'none';
+}
+
+function recalcTotal() {
+  const chair = document.getElementById('chairType').value;
+  const duration = parseInt(document.getElementById('duration').value || 0, 10);
+  let base = (chair && rateMap[chair] && rateMap[chair][duration]) ? rateMap[chair][duration] : 0;
+
+  let addon = 0;
+  if (document.getElementById('eyeMassager').checked && duration > 0) {
+    if (duration <= settings.shortThreshold) addon = settings.shortPrice;
+    else if (duration >= settings.freeThreshold) addon = 0;
+    else addon = 0;
+  }
+
+  let gross = base + addon;
+  let discountPct = 0;
+  const discountType = document.getElementById('discountType').value;
+  if (discountType === 'PWD_SENIOR') discountPct = 20;
+  else if (discountType === 'PROMO') discountPct = parseFloat(document.getElementById('promoPercent').value || 0);
+
+  const discountAmt = gross * (discountPct / 100);
+  const total = gross - discountAmt;
+  document.getElementById('totalDisplay').innerText = '₱' + total.toFixed(2);
+}
+
+function genToken() {
+  if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+  return 'tok-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+}
+
+// Generate a fresh idempotency token as soon as the page loads, and again after
+// any successful submit - so every distinct sale gets its own unique token, but
+// a retry/resubmit of the SAME attempt (e.g. a slow network causing a second
+// click, or an offline queue re-sending) always carries the SAME token and can
+// never create a duplicate transaction.
+document.getElementById('clientToken').value = genToken();
+
+document.getElementById('saleForm').addEventListener('submit', function (e) {
+  document.getElementById('occurredAt').value = new Date().toISOString();
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.innerText = 'Submitting...';
+  if (!navigator.onLine) {
+    // Offline handling (queueing + background sync) lives in staff-offline.js
+    e.preventDefault();
+    if (window.queueOfflineSale) {
+      window.queueOfflineSale(new FormData(this)).then(function () {
+        document.getElementById('offlineBanner').style.display = 'block';
+        btn.disabled = false;
+        btn.innerText = 'Submit Sale';
+        document.getElementById('clientToken').value = genToken();
+      });
+    } else {
+      btn.disabled = false;
+      btn.innerText = 'Submit Sale';
+    }
+  }
+});
+
+document.querySelectorAll('#duration').forEach(function (el) { el.addEventListener('change', recalcTotal); });
+recalcTotal();
+</script>
+{% endblock %}

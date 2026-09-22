@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Rates & Settings - Relaxify Lounge{% endblock %}
+{% block content %}
+<h2>Chair Rates & Add-on Settings</h2>
+{% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <h3>Current Rates (as of {{ today }})</h3>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Chair</th><th>Duration</th><th class="text-right">Price</th></tr>
+    {% for chair, durations in current.items() %}
+      {% for duration, price in durations.items()|sort %}
+      <tr>
+        <td>{{ chair }}</td>
+        <td>{{ duration }} min</td>
+        <td class="text-right">₱{{ "{:,.2f}".format(price) }}</td>
+      </tr>
+      {% endfor %}
+    {% endfor %}
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Full Rate History</h3>
+  <p style="font-size:0.8rem;color:#999">Every rate ever set, including future-dated changes that haven't taken effect yet.</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Chair</th><th>Duration</th><th class="text-right">Price</th><th>Effective From</th><th>Status</th></tr>
+    {% for r in all_rates %}
+    <tr>
+      <td>{{ r.chair_type }}</td>
+      <td>{{ r.duration_minutes }} min</td>
+      <td class="text-right">₱{{ "{:,.2f}".format(r.price) }}</td>
+      <td>{{ r.effective_from.strftime('%m/%d/%Y') }}</td>
+      <td>{% if r.effective_from.isoformat() > today %}<span class="badge" style="background:rgba(201,162,75,0.2);color:var(--gold-bright);border:1px solid var(--gold)">UPCOMING</span>{% else %}<span class="badge badge-active">IN EFFECT</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Change a Rate</h3>
+  <p style="font-size:0.8rem;color:#999">Setting a new price for a chair + duration doesn't overwrite history &mdash; it takes effect from the date you choose. Past sales keep whatever was actually charged at the time.</p>
+  <form method="post" action="/rates/add" class="grid grid-4">
+    <div><label>Chair</label>
+      <select name="chair_type" required>
+        <option value="Deluxe">Deluxe</option>
+        <option value="King">King</option>
+      </select>
+    </div>
+    <div><label>Duration (minutes)</label><input type="number" name="duration_minutes" required min="1"></div>
+    <div><label>New Price</label><input type="number" step="0.01" name="price" required min="0"></div>
+    <div><label>Effective From</label><input type="date" name="effective_from" value="{{ '' }}" required></div>
+    <div style="align-self:end;grid-column:span 4"><button type="submit">Save Rate</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Eye Massager Add-on</h3>
+  <form method="post" action="/rates/settings/update" class="grid grid-3">
+    <div><label>Add-on Price (short sessions)</label><input type="number" step="0.01" name="eye_massager_short_price" value="{{ settings.get('eye_massager_short_price', '20') }}" required></div>
+    <div><label>"Short session" threshold (minutes, and below)</label><input type="number" name="eye_massager_short_threshold" value="{{ settings.get('eye_massager_short_threshold', '15') }}" required></div>
+    <div><label>Free threshold (minutes, and above)</label><input type="number" name="eye_massager_free_threshold" value="{{ settings.get('eye_massager_free_threshold', '30') }}" required></div>
+    <div style="align-self:end;grid-column:span 3"><button type="submit">Save Settings</button></div>
+  </form>
+</div>
+{% endblock %}
