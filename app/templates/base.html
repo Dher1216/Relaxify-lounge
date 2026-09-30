@@ -20,6 +20,7 @@
     <nav class="mainnav">
       {% if user.role == "STAFF" %}
       <a href="/staff/sale" class="navtop" style="text-decoration:none;display:inline-block">Record a Sale</a>
+      <a href="/staff/sock-count" class="navtop" style="text-decoration:none;display:inline-block">End of Shift Count</a>
       {% else %}
       <a href="/" class="navtop" style="text-decoration:none;display:inline-block">Dashboard</a>
       <div class="navgroup">
@@ -42,6 +43,7 @@
           <a href="/reports/notes">Notes to Financial Statements</a>
           <a href="/reports/daily">Daily Transactions</a>
           <a href="/reports/account-ledger">Account Ledger (Search)</a>
+          <a href="/reports/chair-performance">Chair Performance</a>
         </div>
       </div>
       <div class="navgroup">
@@ -50,6 +52,7 @@
           <a href="/users">Users</a>
           <a href="/accounts">Account Codes</a>
           <a href="/rates">Rates & Settings</a>
+          <a href="/inventory/socks">Foot Socks Inventory</a>
           <a href="/audit">History / Audit Trail</a>
         </div>
       </div>

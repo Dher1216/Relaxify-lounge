@@ -9,7 +9,7 @@ from sqlalchemy import inspect, text
 
 from .database import Base, engine, SessionLocal
 from .models import User
-from .routers import auth_routes, dashboard, transactions, reports, accounts, users, audit, rates, staff_sale
+from .routers import auth_routes, dashboard, transactions, reports, accounts, users, audit, rates, staff_sale, socks
 
 app = FastAPI(title="Relaxify Lounge - Accounting System")
 
@@ -121,3 +121,4 @@ app.include_router(users.router)
 app.include_router(audit.router)
 app.include_router(rates.router)
 app.include_router(staff_sale.router)
+app.include_router(socks.router)

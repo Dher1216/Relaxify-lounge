@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Foot Socks Inventory - Relaxify Lounge{% endblock %}
+{% block content %}
+<h2>Foot Socks Inventory</h2>
+<p style="font-size:0.8rem;color:#999;margin-top:-8px">Quantity-only tracking, purely to help catch unrecorded sales. This never touches your accounting records and appears in no financial statement.</p>
+{% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+
+<div class="stat-box" style="max-width:280px;margin-bottom:20px">
+  <div class="label">Current Stock (System Running Total)</div>
+  <div class="value">{{ current_stock }} pairs</div>
+</div>
+
+<div class="card no-print">
+  <a href="/inventory/socks/reconciliation" class="btn">View Shift Reconciliation Report</a>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h3>Receive Stock</h3>
+    <form method="post" action="/inventory/socks/receive">
+      <label>Quantity Received</label>
+      <input type="number" name="quantity" min="1" required>
+      <label>Notes (optional)</label>
+      <input type="text" name="notes" placeholder="e.g. supplier name, invoice #">
+      <button type="submit" style="margin-top:10px">Add to Stock</button>
+    </form>
+  </div>
+  <div class="card">
+    <h3>Adjust Out</h3>
+    <p style="font-size:0.78rem;color:#999">For damaged pairs, complimentary sessions, or any other non-sale reason pairs left stock.</p>
+    <form method="post" action="/inventory/socks/adjust">
+      <label>Quantity</label>
+      <input type="number" name="quantity" min="1" required>
+      <label>Reason (required)</label>
+      <input type="text" name="reason" required>
+      <button type="submit" style="margin-top:10px">Record Adjustment</button>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-top:20px">
+  <h3>Recent Entries</h3>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Date/Time</th><th>Type</th><th>Quantity</th><th>Detail</th><th>By</th><th></th></tr>
+    {% for e in recent %}
+    <tr>
+      <td>{{ e.occurred_at | manila_datetime }}</td>
+      <td>{{ e.entry_type }}</td>
+      <td>{{ e.quantity }}</td>
+      <td>{{ e.reason or (('Outgoing: ' + e.outgoing_staff) if e.outgoing_staff else '—') }}</td>
+      <td>{{ e.entered_by }}</td>
+      <td>
+        <button type="button" class="btn-secondary" style="padding:3px 8px;font-size:0.72rem" onclick="document.getElementById('cancel-{{ e.id }}').classList.add('show')">Cancel</button>
+        <div class="modal-overlay" id="cancel-{{ e.id }}">
+          <div class="modal-box">
+            <h3>Cancel this entry?</h3>
+            <p>This preserves it in history but removes it from all calculations.</p>
+            <form method="post" action="/inventory/socks/{{ e.id }}/cancel">
+              <input type="text" name="cancel_reason" placeholder="Reason (optional)">
+              <div class="actions">
+                <button type="submit">Yes, Cancel</button>
+                <button type="button" class="btn-secondary" onclick="document.getElementById('cancel-{{ e.id }}').classList.remove('show')">No</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6">No entries yet.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+{% endblock %}

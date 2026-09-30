@@ -57,6 +57,8 @@ DEFAULT_SETTINGS = {
     "eye_massager_short_price": "20",   # add-on price for sessions <=15 min
     "eye_massager_short_threshold": "15",
     "eye_massager_free_threshold": "30",  # sessions >= this many minutes: free
+    "chair_units_deluxe": "3",   # number of physical Deluxe chairs - used to average usage per unit
+    "chair_units_king": "1",     # number of physical King chairs
 }
 
 

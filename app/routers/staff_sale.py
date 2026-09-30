@@ -205,6 +205,7 @@ def submit_sale(
             reference_number=ref, transaction_date=t_date, transaction_type="RECEIPT",
             remarks=" ".join(remarks_bits), status="ACTIVE", created_by=user.username,
             client_token=client_token or None, occurred_at=occurred_dt,
+            chair_type=chair_type, duration_minutes=duration_minutes,
         )
         db.add(txn)
         db.flush()

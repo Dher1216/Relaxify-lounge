@@ -67,6 +67,8 @@ def update_settings(
     eye_massager_short_price: str = Form(...),
     eye_massager_short_threshold: str = Form(...),
     eye_massager_free_threshold: str = Form(...),
+    chair_units_deluxe: str = Form("3"),
+    chair_units_king: str = Form("1"),
 ):
     user = get_current_user(request, db)
     if not user or not can(user, "accounts"):
@@ -76,6 +78,8 @@ def update_settings(
         "eye_massager_short_price": eye_massager_short_price,
         "eye_massager_short_threshold": eye_massager_short_threshold,
         "eye_massager_free_threshold": eye_massager_free_threshold,
+        "chair_units_deluxe": chair_units_deluxe,
+        "chair_units_king": chair_units_king,
     }
     for key, value in updates.items():
         setting = db.query(Setting).filter(Setting.key == key).first()

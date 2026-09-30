@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}End of Shift Count - Relaxify Lounge{% endblock %}
+{% block content %}
+<div style="max-width:420px;margin:0 auto">
+  <h2 style="text-align:center">End of Shift Count</h2>
+  <p style="text-align:center;color:#999;font-size:0.85rem">Count the foot socks pairs physically left in stock right now, and enter it below.</p>
+
+  {% if saved %}<div class="success-msg" style="text-align:center">Count recorded, thank you.</div>{% endif %}
+  {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+
+  <div class="card">
+    <form method="post" action="/staff/sock-count" id="countForm">
+      <input type="hidden" name="client_token" id="clientToken">
+      <label>Pairs Currently in Stock</label>
+      <input type="number" name="quantity" min="0" required autofocus>
+      <label>Who Was Working This Shift?</label>
+      <input type="text" name="outgoing_staff" placeholder="e.g. Maria, Jun" required>
+      <button type="submit" id="submitBtn" style="width:100%;margin-top:14px">Submit Count</button>
+    </form>
+  </div>
+</div>
+<script>
+function genToken() {
+  if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+  return 'tok-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+}
+document.getElementById('clientToken').value = genToken();
+document.getElementById('countForm').addEventListener('submit', function () {
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.innerText = 'Submitting...';
+});
+</script>
+{% endblock %}

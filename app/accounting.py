@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from .models import Transaction, TransactionLine, Account, Counter, ChairRate
+from .models import Transaction, TransactionLine, Account, Counter, ChairRate, Setting
 
 PREFIXES = {"RECEIPT": "RCPT", "DISBURSEMENT": "DISB", "TRANSFER": "XFER"}
 
@@ -393,3 +393,69 @@ def current_chair_rates(db: Session, as_of: datetime.date) -> dict:
             latest_effective[key] = r.effective_from
             result.setdefault(r.chair_type, {})[r.duration_minutes] = float(r.price)
     return result
+
+
+CHAIR_REVENUE_CODES = {"Deluxe": "4101", "King": "4102"}
+
+
+def chair_performance_report(db: Session, from_date: datetime.date, to_date: datetime.date):
+    """
+    Per chair type: average revenue per day (full history, since peso amounts were
+    always recorded accurately) and average hours used per unit per day (only from
+    whenever duration_minutes actually started being recorded - staff-screen sales
+    only - since earlier lump-sum entries have no session-length data to average).
+    """
+    settings = {s.key: s.value for s in db.query(Setting).all()}
+    unit_counts = {
+        "Deluxe": int(settings.get("chair_units_deluxe", "3")),
+        "King": int(settings.get("chair_units_king", "1")),
+    }
+
+    total_days = (to_date - from_date).days + 1
+    results = {}
+
+    for chair, revenue_code in CHAIR_REVENUE_CODES.items():
+        revenue_acc = db.query(Account).filter(Account.code == revenue_code).first()
+        total_revenue = Decimal("0.00")
+        if revenue_acc:
+            total_revenue = account_net_balance(db, revenue_acc, as_of=to_date, from_date=from_date)
+        avg_sale_per_day = (total_revenue / total_days) if total_days > 0 else Decimal("0.00")
+
+        # Duration data: only exists for staff-screen sales, and only from whenever
+        # the first one was ever recorded - never assume it goes back further than that.
+        earliest_duration_row = (
+            db.query(func.min(Transaction.transaction_date))
+            .filter(Transaction.chair_type == chair, Transaction.duration_minutes.isnot(None))
+            .filter(Transaction.status == "ACTIVE")
+            .scalar()
+        )
+
+        duration_rows = (
+            db.query(Transaction.duration_minutes)
+            .filter(Transaction.chair_type == chair, Transaction.duration_minutes.isnot(None))
+            .filter(Transaction.status == "ACTIVE")
+            .filter(Transaction.transaction_date >= from_date, Transaction.transaction_date <= to_date)
+            .all()
+        )
+        total_minutes = sum((r[0] for r in duration_rows), 0)
+
+        effective_start = max(from_date, earliest_duration_row) if earliest_duration_row else None
+        effective_days = (to_date - effective_start).days + 1 if effective_start and effective_start <= to_date else 0
+
+        units = unit_counts.get(chair, 1)
+        if effective_days > 0 and units > 0:
+            avg_hours_per_unit_per_day = (Decimal(total_minutes) / Decimal(60)) / Decimal(units) / Decimal(effective_days)
+        else:
+            avg_hours_per_unit_per_day = None
+
+        results[chair] = {
+            "units": units,
+            "total_revenue": total_revenue,
+            "avg_sale_per_day": avg_sale_per_day,
+            "total_minutes": total_minutes,
+            "avg_hours_per_unit_per_day": avg_hours_per_unit_per_day,
+            "duration_data_from": earliest_duration_row,
+            "effective_days": effective_days,
+        }
+
+    return {"chairs": results, "total_days": total_days}

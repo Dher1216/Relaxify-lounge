@@ -312,3 +312,20 @@ def account_ledger_view(request: Request, db: Session = Depends(get_db), account
         "selected_account": selected_account, "data": data,
         "date_from": d_from.isoformat(), "date_to": d_to.isoformat(),
     })
+
+
+# ---------------- CHAIR PERFORMANCE ----------------
+
+@router.get("/chair-performance")
+def chair_performance_view(request: Request, db: Session = Depends(get_db), date_from: str = None, date_to: str = None):
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    d_from = _parse(date_from, _today().replace(day=1))
+    d_to = _parse(date_to, _today())
+    data = acc.chair_performance_report(db, d_from, d_to)
+    _log_report(db, user, "Chair Performance", f"{d_from} to {d_to}")
+    return templates.TemplateResponse("reports/chair_performance.html", {
+        "request": request, "user": user, "data": data,
+        "date_from": d_from.isoformat(), "date_to": d_to.isoformat(),
+    })

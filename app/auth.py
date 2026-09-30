@@ -33,8 +33,8 @@ def require_login(request: Request, db: Session = Depends(get_db)) -> User:
 
 
 ROLE_PERMISSIONS = {
-    "ADMIN": {"transactions", "reports", "accounts", "users", "audit", "edit_posted_transactions"},
-    "ACCOUNTANT": {"transactions", "reports", "accounts"},
+    "ADMIN": {"transactions", "reports", "accounts", "users", "audit", "edit_posted_transactions", "sock_manage"},
+    "ACCOUNTANT": {"transactions", "reports", "accounts", "sock_manage"},
     "STAFF": {"transactions", "reports_view"},
     "VIEWER": {"reports_view"},
 }

@@ -54,6 +54,8 @@ class Transaction(Base):
     updated_at = Column(DateTime, nullable=True)
     client_token = Column(String(64), unique=True, nullable=True, index=True)
     occurred_at = Column(DateTime, nullable=True)
+    chair_type = Column(String(30), nullable=True)  # "Deluxe" / "King" - set only for staff-recorded chair sales
+    duration_minutes = Column(Integer, nullable=True)  # session length in minutes, same scope as chair_type
 
     lines = relationship("TransactionLine", back_populates="transaction", cascade="all, delete-orphan")
 
@@ -122,3 +124,25 @@ class Counter(Base):
     id = Column(Integer, primary_key=True)
     key = Column(String(30), unique=True, nullable=False)  # e.g. "RCPT-2026"
     next_value = Column(Integer, nullable=False, default=1)
+
+
+class SockEntry(Base):
+    """Foot-sock stock movements. Purely quantity-based inventory control - deliberately has
+    NO link to accounts/transactions and no money values, so it can never appear in any
+    financial statement. entry_type is RECEIVE (pairs in), ADJUST (pairs out for a
+    non-sale reason, reason required) or COUNT (a physical count of pairs on hand,
+    marking the end of one reconciliation shift and the start of the next)."""
+    __tablename__ = "sock_entries"
+
+    id = Column(Integer, primary_key=True)
+    entry_type = Column(String(10), nullable=False)   # RECEIVE / ADJUST / COUNT
+    quantity = Column(Integer, nullable=False)
+    reason = Column(String(255), nullable=True)
+    occurred_at = Column(DateTime, nullable=False)    # when it physically happened (UTC)
+    entered_by = Column(String(50), nullable=False)
+    outgoing_staff = Column(String(255), nullable=True)  # COUNT only: staff finishing their shift, comma-separated
+    client_token = Column(String(64), unique=True, nullable=True, index=True)
+    is_cancelled = Column(Boolean, default=False, nullable=False)
+    cancelled_by = Column(String(50), nullable=True)
+    cancel_reason = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=now_utc)
