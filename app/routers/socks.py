@@ -4,6 +4,7 @@ from ..template_env import templates
 from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from ..database import get_db
 from ..auth import get_current_user, can
@@ -40,10 +41,28 @@ def _current_stock(db: Session) -> int:
     staff-recorded sale (any status - a voided sale still used a physical pair)
     subtracts. COUNT entries are checkpoints for reconciliation, not part of this
     running total, since the whole point of counting is to check this number
-    against reality, not to let a count silently redefine it."""
+    against reality, not to let a count silently redefine it.
+
+    Sales only count from the moment this feature was first actually used (the
+    earliest sock_entries row of any kind) - not retroactively for the business's
+    entire sales history before anyone ever logged a single pair. Otherwise the
+    very first time this page is opened, it charges every historical sale against
+    a stock of zero and shows a confusing, meaningless negative number."""
+    tracking_start = (
+        db.query(func.min(SockEntry.occurred_at))
+        .filter(SockEntry.is_cancelled == False)  # noqa: E712
+        .scalar()
+    )
     received = db.query(SockEntry).filter(SockEntry.entry_type == "RECEIVE", SockEntry.is_cancelled == False).all()  # noqa: E712
     adjusted = db.query(SockEntry).filter(SockEntry.entry_type == "ADJUST", SockEntry.is_cancelled == False).all()  # noqa: E712
-    sales_count = db.query(Transaction).filter(Transaction.chair_type.isnot(None)).count()
+    sales_query = db.query(Transaction).filter(Transaction.chair_type.isnot(None))
+    if tracking_start:
+        sales_query = sales_query.filter(Transaction.occurred_at >= tracking_start)
+    else:
+        # No sock entries logged at all yet - nothing to charge against, since
+        # tracking hasn't started.
+        sales_query = sales_query.filter(Transaction.id.is_(None))
+    sales_count = sales_query.count()
     return sum(r.quantity for r in received) - sum(a.quantity for a in adjusted) - sales_count
 
 
