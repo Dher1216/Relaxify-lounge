@@ -12,7 +12,7 @@
     <form method="post" action="/staff/sock-count" id="countForm">
       <input type="hidden" name="client_token" id="clientToken">
       <label>Pairs Currently in Stock</label>
-      <input type="number" name="quantity" min="0" required autofocus>
+      <input type="number" name="quantity" min="0" step="0.5" required autofocus>
       <label>Who Was Working This Shift?</label>
       <input type="text" name="outgoing_staff" placeholder="e.g. Maria, Jun" required>
       <button type="submit" id="submitBtn" style="width:100%;margin-top:14px">Submit Count</button>

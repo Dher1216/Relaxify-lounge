@@ -18,8 +18,8 @@
   <div class="card">
     <h3>Receive Stock</h3>
     <form method="post" action="/inventory/socks/receive">
-      <label>Quantity Received</label>
-      <input type="number" name="quantity" min="1" required>
+      <label>Quantity Received (pairs - halves allowed, e.g. 1.5)</label>
+      <input type="number" name="quantity" min="0.5" step="0.5" required>
       <label>Notes (optional)</label>
       <input type="text" name="notes" placeholder="e.g. supplier name, invoice #">
       <button type="submit" style="margin-top:10px">Add to Stock</button>
@@ -29,8 +29,8 @@
     <h3>Adjust Out</h3>
     <p style="font-size:0.78rem;color:#999">For damaged pairs, complimentary sessions, or any other non-sale reason pairs left stock.</p>
     <form method="post" action="/inventory/socks/adjust">
-      <label>Quantity</label>
-      <input type="number" name="quantity" min="1" required>
+      <label>Quantity (pairs - halves allowed, e.g. 0.5 for one damaged sock)</label>
+      <input type="number" name="quantity" min="0.5" step="0.5" required>
       <label>Reason (required)</label>
       <input type="text" name="reason" required>
       <button type="submit" style="margin-top:10px">Record Adjustment</button>

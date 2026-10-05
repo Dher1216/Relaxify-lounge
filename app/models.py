@@ -136,7 +136,7 @@ class SockEntry(Base):
 
     id = Column(Integer, primary_key=True)
     entry_type = Column(String(10), nullable=False)   # RECEIVE / ADJUST / COUNT
-    quantity = Column(Integer, nullable=False)
+    quantity = Column(Numeric(10, 1), nullable=False)  # in pairs - allows half-pairs (e.g. one damaged sock = 0.5)
     reason = Column(String(255), nullable=True)
     occurred_at = Column(DateTime, nullable=False)    # when it physically happened (UTC)
     entered_by = Column(String(50), nullable=False)

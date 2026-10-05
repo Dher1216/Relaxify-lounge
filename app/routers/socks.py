@@ -1,5 +1,6 @@
 import os
 import datetime
+from decimal import Decimal, InvalidOperation
 from ..template_env import templates
 from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import RedirectResponse
@@ -11,6 +12,20 @@ from ..auth import get_current_user, can
 from ..models import SockEntry, Transaction, AuditLog
 
 router = APIRouter()
+
+
+def _parse_quantity(raw: str):
+    """Pairs are tracked to the nearest half-pair (a single damaged sock = 0.5),
+    never finer than that - a sock inventory in quarters wouldn't mean anything.
+    Returns (Decimal, error_message). error_message is None if valid."""
+    try:
+        q = Decimal(str(raw).strip())
+    except (InvalidOperation, ValueError):
+        return None, "Please enter a valid number."
+    q = q.quantize(Decimal("0.1"))
+    if (q * 2) % 1 != 0:
+        return None, "Quantity must be in whole or half pairs (e.g. 1, 1.5, 2)."
+    return q, None
 
 
 # ---------------- Admin: stock management ----------------
@@ -69,11 +84,14 @@ def _current_stock(db: Session) -> int:
 @router.post("/inventory/socks/receive")
 def receive_stock(
     request: Request, db: Session = Depends(get_db),
-    quantity: int = Form(...), occurred_at: str = Form(""), notes: str = Form(""),
+    quantity: str = Form(...), occurred_at: str = Form(""), notes: str = Form(""),
 ):
     user = get_current_user(request, db)
     if not user or not can(user, "sock_manage"):
         return RedirectResponse("/inventory/socks", status_code=303)
+    quantity, err = _parse_quantity(quantity)
+    if err:
+        return _render_error(request, db, user, err)
     if quantity <= 0:
         return _render_error(request, db, user, "Quantity received must be a positive number.")
 
@@ -87,11 +105,14 @@ def receive_stock(
 @router.post("/inventory/socks/adjust")
 def adjust_stock(
     request: Request, db: Session = Depends(get_db),
-    quantity: int = Form(...), reason: str = Form(...), occurred_at: str = Form(""),
+    quantity: str = Form(...), reason: str = Form(...), occurred_at: str = Form(""),
 ):
     user = get_current_user(request, db)
     if not user or not can(user, "sock_manage"):
         return RedirectResponse("/inventory/socks", status_code=303)
+    quantity, err = _parse_quantity(quantity)
+    if err:
+        return _render_error(request, db, user, err)
     if quantity <= 0:
         return _render_error(request, db, user, "Adjustment quantity must be a positive number.")
     if not reason.strip():
@@ -136,7 +157,7 @@ def sock_count_form(request: Request, db: Session = Depends(get_db), saved: int 
 @router.post("/staff/sock-count")
 def submit_sock_count(
     request: Request, db: Session = Depends(get_db),
-    quantity: int = Form(...), outgoing_staff: str = Form(...), client_token: str = Form(""),
+    quantity: str = Form(...), outgoing_staff: str = Form(...), client_token: str = Form(""),
 ):
     user = get_current_user(request, db)
     if not user:
@@ -147,6 +168,11 @@ def submit_sock_count(
         if existing:
             return RedirectResponse("/staff/sock-count?saved=1", status_code=303)
 
+    quantity, err = _parse_quantity(quantity)
+    if err:
+        return templates.TemplateResponse("sock_count.html", {
+            "request": request, "user": user, "error": err, "saved": 0,
+        })
     if quantity < 0:
         return templates.TemplateResponse("sock_count.html", {
             "request": request, "user": user, "error": "Count can't be negative.", "saved": 0,
