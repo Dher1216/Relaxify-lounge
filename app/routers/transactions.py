@@ -167,6 +167,40 @@ def list_transactions(
         else:
             query = query.filter(Transaction.id == None)  # noqa: E711 - no Service Revenue account configured
 
+    if sales_only == "1":
+        # Split view: Deluxe sales on the left, King sales on the right. Each
+        # sale is placed by which chair-revenue account (4101 / 4102) it credited.
+        # Amounts are revenue-line net (credit - debit) so the column totals
+        # add up to the dashboard's "Total Sales Today".
+        sale_txns = query.order_by(Transaction.transaction_date.desc(), Transaction.id.desc()).all()
+        deluxe_acc = db.query(Account).filter(Account.code == "4101").first()
+        king_acc = db.query(Account).filter(Account.code == "4102").first()
+        rev_root = db.query(Account).filter(Account.code == "4100").first()
+        rev_ids = set()
+        if rev_root:
+            rev_ids = {rev_root.id} | {a.id for a in db.query(Account).filter(Account.parent_id == rev_root.id).all()}
+        deluxe_rows, king_rows, other_rows = [], [], []
+        for t in sale_txns:
+            amount = sum((l.credit - l.debit for l in t.lines if l.account_id in rev_ids), Decimal("0.00"))
+            credited = {l.account_id for l in t.lines if l.credit > 0}
+            row = {"txn": t, "amount": amount}
+            is_d = bool(deluxe_acc and deluxe_acc.id in credited)
+            is_k = bool(king_acc and king_acc.id in credited)
+            if is_d and not is_k:
+                deluxe_rows.append(row)
+            elif is_k and not is_d:
+                king_rows.append(row)
+            else:
+                other_rows.append(row)  # add-on only, parent-only, or mixed chair types
+        tot = lambda rows: sum((r["amount"] for r in rows if r["txn"].status == "ACTIVE"), Decimal("0.00"))
+        return templates.TemplateResponse("sales_split.html", {
+            "request": request, "user": user,
+            "filters": {"date_from": date_from, "date_to": date_to, "ttype": ttype, "status": status, "q": q},
+            "deluxe_rows": deluxe_rows, "king_rows": king_rows, "other_rows": other_rows,
+            "deluxe_total": tot(deluxe_rows), "king_total": tot(king_rows), "other_total": tot(other_rows),
+            "grand_total": tot(deluxe_rows) + tot(king_rows) + tot(other_rows),
+        })
+
     page_size = 25
     total = query.count()
     total_pages = max(1, (total + page_size - 1) // page_size)

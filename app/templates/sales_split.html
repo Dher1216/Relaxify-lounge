@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Sales - Relaxify Lounge{% endblock %}
+{% block content %}
+{% macro table(rows) %}
+<div class="table-wrap">
+<table>
+  <tr><th>Date</th><th>Reference</th><th>Status</th><th>Remarks</th><th class="text-right">Amount</th></tr>
+  {% for r in rows %}
+  <tr>
+    <td>{{ r.txn.transaction_date.strftime('%m/%d/%Y') }}</td>
+    <td><a href="/transactions/{{ r.txn.id }}">{{ r.txn.reference_number }}</a></td>
+    <td><span class="badge {{ 'badge-active' if r.txn.status == 'ACTIVE' else 'badge-voided' }}">{{ r.txn.status }}</span></td>
+    <td>{{ r.txn.remarks or '—' }}</td>
+    <td class="text-right">₱{{ "{:,.2f}".format(r.amount) }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="5">No sales.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endmacro %}
+
+<h2>Sales{% if filters.date_from %} &mdash; {{ filters.date_from }}{% if filters.date_to and filters.date_to != filters.date_from %} to {{ filters.date_to }}{% endif %}{% endif %}</h2>
+<p style="color:#999;font-size:0.85rem;margin-top:-8px">Detected from the revenue accounts actually credited. Voided sales are shown but not counted in totals.</p>
+
+<div class="card">
+  <form method="get" action="/transactions" class="grid grid-4">
+    <input type="hidden" name="sales_only" value="1">
+    <div><label>From</label><input type="date" name="date_from" value="{{ filters.date_from or '' }}"></div>
+    <div><label>To</label><input type="date" name="date_to" value="{{ filters.date_to or '' }}"></div>
+    <div><label>Search Reference #</label><input type="text" name="q" value="{{ filters.q or '' }}"></div>
+    <div style="align-self:end"><button type="submit">Filter</button></div>
+  </form>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;align-items:start">
+  <div class="card">
+    <h3>Deluxe Sales</h3>
+    {{ table(deluxe_rows) }}
+    <p style="text-align:right;margin-top:10px"><strong>Deluxe Total: ₱{{ "{:,.2f}".format(deluxe_total) }}</strong></p>
+  </div>
+  <div class="card">
+    <h3>King Sales</h3>
+    {{ table(king_rows) }}
+    <p style="text-align:right;margin-top:10px"><strong>King Total: ₱{{ "{:,.2f}".format(king_total) }}</strong></p>
+  </div>
+</div>
+
+{% if other_rows %}
+<div class="card">
+  <h3>Other Sales (add-ons / mixed)</h3>
+  {{ table(other_rows) }}
+  <p style="text-align:right;margin-top:10px"><strong>Other Total: ₱{{ "{:,.2f}".format(other_total) }}</strong></p>
+</div>
+{% endif %}
+
+<div class="card"><p style="text-align:right;font-size:1.1rem"><strong>Total Sales: ₱{{ "{:,.2f}".format(grand_total) }}</strong></p></div>
+{% endblock %}
