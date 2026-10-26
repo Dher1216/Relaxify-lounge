@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Relaxify Lounge{% endblock %}</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0b0b0c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Relaxify">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/css/pwa.css">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -132,5 +140,6 @@
     // Re-check shortly after load too, since some tables' widths settle after fonts/images load.
     setTimeout(setupScrollHints, 300);
 </script>
+<script src="/static/js/pwa.js" defer></script>
 </body>
 </html>

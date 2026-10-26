@@ -1,7 +1,8 @@
 import os
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse, FileResponse
+import hashlib
+from fastapi.responses import RedirectResponse, FileResponse, Response, JSONResponse, HTMLResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -15,7 +16,8 @@ app = FastAPI(title="Relaxify Lounge - Accounting System")
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-only-secret-change-me-in-render-env-vars")
 
-STAFF_ALLOWED_PREFIXES = ("/staff", "/static", "/login", "/logout")
+STAFF_ALLOWED_PREFIXES = ("/staff", "/static", "/login", "/logout", "/launch", "/session-ping",
+                          "/sw.js", "/service-worker.js", "/manifest.webmanifest")
 
 
 class StaffConfinementMiddleware(BaseHTTPMiddleware):
@@ -48,15 +50,85 @@ BASE_DIR = os.path.dirname(__file__)
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 
 
-@app.get("/service-worker.js")
+def _build_fingerprint():
+    """Hash of every file the service worker saves on the device. When any of them
+    changes (i.e. on any deploy that touches the shell), the cache name changes, so
+    phones drop the old saved screens automatically - no manual version bump."""
+    h = hashlib.sha1()
+    files = [os.path.join(BASE_DIR, "sw.js"), os.path.join(BASE_DIR, "templates", "launch.html")]
+    for sub in ("css", "js", "img"):
+        d = os.path.join(BASE_DIR, "static", sub)
+        files += [os.path.join(d, f) for f in sorted(os.listdir(d))]
+    for f in files:
+        try:
+            with open(f, "rb") as fh:
+                h.update(os.path.basename(f).encode()); h.update(fh.read())
+        except OSError:
+            pass
+    return h.hexdigest()[:10]
+
+
+BUILD_ID = _build_fingerprint()
+_NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate", "Service-Worker-Allowed": "/"}
+
+
+def _sw_response():
+    with open(os.path.join(BASE_DIR, "sw.js"), encoding="utf-8") as fh:
+        body = fh.read().replace("__BUILD__", BUILD_ID)
+    return Response(body, media_type="application/javascript", headers=_NO_CACHE)
+
+
+# Served from the site ROOT (a service worker only controls pages at or below its own
+# path). /service-worker.js is the OLD address; phones that registered it pick up the
+# new code from there and then move over to /sw.js.
+@app.get("/sw.js")
 def service_worker():
-    # Served from the site ROOT (not /static/) on purpose: a service worker can only
-    # control pages under the same folder it's served from by default, and it needs
-    # to control /staff/sale specifically for offline mode to actually work there.
-    return FileResponse(
-        os.path.join(BASE_DIR, "static", "service-worker.js"),
-        media_type="application/javascript",
-    )
+    return _sw_response()
+
+
+@app.get("/service-worker.js")
+def service_worker_legacy():
+    return _sw_response()
+
+
+@app.get("/manifest.webmanifest")
+def web_manifest():
+    manifest = {
+        "name": "Relaxify Lounge", "short_name": "Relaxify",
+        "start_url": "/launch", "scope": "/", "display": "standalone",
+        "background_color": "#0b0b0c", "theme_color": "#0b0b0c",
+        "icons": [
+            {"src": "/static/img/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+            {"src": "/static/img/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
+        ],
+    }
+    return JSONResponse(manifest, media_type="application/manifest+json")
+
+
+@app.get("/launch")
+def launch_page():
+    # Public, data-free page that the service worker saves on the device.
+    with open(os.path.join(BASE_DIR, "templates", "launch.html"), encoding="utf-8") as fh:
+        return HTMLResponse(fh.read())
+
+
+@app.get("/session-ping")
+def session_ping(request: Request):
+    """Tiny data-free request used by the launcher to wake the server and learn where
+    to send the person. Returns no figures. Never cached."""
+    home, logged_in = "/login", False
+    user_id = request.session.get("user_id")
+    if user_id:
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.id == user_id, User.is_active == True).first()  # noqa: E712
+            if user:
+                logged_in = True
+                home = "/staff/sale" if user.role == "STAFF" else "/"
+        finally:
+            db.close()
+    return JSONResponse({"awake": True, "logged_in": logged_in, "home": home},
+                        headers={"Cache-Control": "no-store"})
 
 # Create tables on boot if they don't exist yet, then seed the Chart of Accounts and
 # the initial users if they aren't already there. Safe to run on every startup: seed.run()

@@ -1,0 +1,15 @@
+/* Launcher screen + install banner. Kept separate from style.css on purpose. */
+.launch-screen { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; }
+.launch-logo { width: 120px; height: 120px; border-radius: 22px; margin-bottom: 14px; }
+.launch-screen h1 { color: var(--gold, #c9a24b); letter-spacing: 3px; font-size: 1.3rem; margin: 0 0 14px; }
+.launch-msg { color: #eee; max-width: 340px; line-height: 1.5; margin: 0 0 18px; }
+.launch-spinner { width: 28px; height: 28px; border: 3px solid rgba(201,162,75,0.25); border-top-color: var(--gold, #c9a24b); border-radius: 50%; animation: launchspin 0.9s linear infinite; }
+.launch-retry { margin-top: 10px; }
+@keyframes launchspin { to { transform: rotate(360deg); } }
+
+.install-banner { position: fixed; left: 8px; right: 8px; bottom: 8px; z-index: 9999; display: flex; align-items: center; gap: 10px; background: #111; border: 1px solid var(--gold, #c9a24b); border-radius: 12px; padding: 10px 12px; color: #f3ead6; box-shadow: 0 4px 18px rgba(0,0,0,0.6); font-size: 0.85rem; }
+.install-banner img { width: 38px; height: 38px; border-radius: 8px; flex: none; }
+.install-banner .ib-text { flex: 1; line-height: 1.35; }
+.install-banner .ib-text strong { display: block; color: var(--gold-bright, #e3c06a); }
+.install-banner button { padding: 7px 12px; font-size: 0.8rem; }
+@media print { .install-banner { display: none !important; } }
