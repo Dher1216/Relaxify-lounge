@@ -13,3 +13,8 @@
 .install-banner .ib-text strong { display: block; color: var(--gold-bright, #e3c06a); }
 .install-banner button { padding: 7px 12px; font-size: 0.8rem; }
 @media print { .install-banner { display: none !important; } }
+
+/* Show/hide password button on the sign-in form */
+.pw-wrap { position: relative; }
+.pw-wrap input { padding-right: 70px; }
+.pw-toggle { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: auto; margin: 0; padding: 6px 10px; font-size: 0.75rem; background: transparent; color: var(--gold-bright, #e3c06a); border: 1px solid var(--gold, #c9a24b); border-radius: 6px; cursor: pointer; }

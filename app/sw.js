@@ -21,6 +21,7 @@ const SHELL_FILES = [
   "/static/css/pwa.css",
   "/static/js/pwa.js",
   "/static/js/launch.js",
+  "/static/js/login.js",
   "/static/js/staff-offline.js",
   "/static/img/logo.png",
   "/static/img/background.png",
