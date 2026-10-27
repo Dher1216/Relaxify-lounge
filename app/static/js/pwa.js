@@ -17,6 +17,7 @@
   // ---- Clear private data on sign-out ----
   function clearPrivate() {
     lsDel("relaxify_last_home");
+    lsDel("relaxify_recent_sales");
     if (navigator.serviceWorker && navigator.serviceWorker.controller) {
       navigator.serviceWorker.controller.postMessage({ type: "CLEAR_PRIVATE" });
     }
