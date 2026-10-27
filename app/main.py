@@ -69,6 +69,10 @@ def _build_fingerprint():
 
 
 BUILD_ID = _build_fingerprint()
+# Templates add ?v=<build> to their CSS/JS links, so a new page always loads the matching
+# new script instead of an older copy the phone saved (page and script can never mismatch).
+from .template_env import templates as _templates
+_templates.env.globals["build_id"] = BUILD_ID
 _NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate", "Service-Worker-Allowed": "/"}
 
 

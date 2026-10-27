@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Record a Sale - Relaxify Lounge{% endblock %}
 {% block head %}
-<script src="/static/js/staff-offline.js" defer></script>
+<script src="/static/js/staff-offline.js?v={{ build_id }}" defer></script>
 {% endblock %}
 {% block content %}
 <div style="max-width:480px;margin:0 auto">
@@ -233,8 +233,20 @@ function showSaved(text) {
 let submitting = false;
 document.getElementById('saleForm').addEventListener('submit', function (e) {
   e.preventDefault();
+  const formEl = this;
+  try {
+    handleSale(formEl);
+  } catch (err) {
+    // Safety net: if anything in the save-first code fails, never leave the staff member
+    // stuck with a dead button - send the sale the plain way (the server still guards duplicates).
+    submitting = false;
+    document.getElementById('submitBtn').disabled = false;
+    formEl.submit();
+  }
+});
+
+function handleSale(form) {
   if (submitting) return;                              // ignore double-taps
-  const form = this;
   if (!form.reportValidity()) return;
   submitting = true;
 
@@ -277,7 +289,7 @@ document.getElementById('saleForm').addEventListener('submit', function (e) {
       btn.disabled = false; submitting = false;
     });
   });
-});
+}
 
 document.querySelectorAll('#duration').forEach(function (el) { el.addEventListener('change', recalcTotal); });
 recalcTotal();

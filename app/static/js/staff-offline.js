@@ -209,3 +209,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     if (stillWaiting) window.syncNow();
   } catch (e) { /* IndexedDB not available: sales are sent directly instead */ }
 });
+
+// Compatibility for a staff page saved on the phone by an older version of the app.
+window.queueOfflineSale = function (formData) { return window.saveSaleLocally(formData); };
+window.recentQueuedDuplicate = function () { return Promise.resolve(false); };

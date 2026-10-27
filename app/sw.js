@@ -14,15 +14,18 @@ const BUILD = "__BUILD__";
 const SHELL_CACHE = "app-shell-" + BUILD;
 const STAFF_CACHE = "staff-page-v1";
 
+// CSS/JS are saved under TWO addresses: plain (used by the launcher page) and with
+// ?v=<build> (used by the app's pages, so each page always gets its own build's script).
+const V = "?v=" + BUILD;
 const SHELL_FILES = [
   "/launch",
   "/manifest.webmanifest",
-  "/static/css/style.css",
-  "/static/css/pwa.css",
-  "/static/js/pwa.js",
+  "/static/css/style.css", "/static/css/style.css" + V,
+  "/static/css/pwa.css", "/static/css/pwa.css" + V,
+  "/static/js/pwa.js", "/static/js/pwa.js" + V,
   "/static/js/launch.js",
-  "/static/js/login.js",
-  "/static/js/staff-offline.js",
+  "/static/js/login.js", "/static/js/login.js" + V,
+  "/static/js/staff-offline.js", "/static/js/staff-offline.js" + V,
   "/static/img/logo.png",
   "/static/img/background.png",
   "/static/img/icon-192.png",
@@ -122,7 +125,20 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Static files and the manifest: answer from the saved copy, refresh in background.
+  // Versioned files (?v=<build>) never change for a given build: saved copy first, no
+  // refresh needed. A copy from an OLDER build has a different ?v= so can never match.
+  if (path.startsWith("/static/") && url.search.startsWith("?v=")) {
+    event.respondWith(
+      caches.open(SHELL_CACHE).then((cache) =>
+        cache.match(req).then((cached) => cached || fetch(req).then((res) => {
+          if (res && res.ok) cache.put(req, res.clone());
+          return res;
+        }))
+      )
+    );
+    return;
+  }
+  // Other static files and the manifest: answer from the saved copy, refresh in background.
   if (path.startsWith("/static/") || path === "/manifest.webmanifest") {
     event.respondWith(staleWhileRevalidate(req));
   }
