@@ -56,7 +56,7 @@ window.queueOfflineSale = async function (formData) {
 // True if an identical sale (same chair, minutes, add-on, discount) was queued on
 // this phone in the last few minutes and hasn't been sent yet - used to ask
 // "different customer?" before queueing the same sale twice while offline.
-window.recentQueuedDuplicate = async function (formData) {
+window.recentQueuedDuplicate = async function (formData, units) {
   try {
     const db = await openQueueDB();
     const items = await new Promise(function (resolve, reject) {
@@ -71,9 +71,12 @@ window.recentQueuedDuplicate = async function (formData) {
     };
     const mine = {};
     formData.forEach(function (v, k) { mine[k] = v; });
-    return items.some(function (it) {
+    const same = items.filter(function (it) {
       return (now - new Date(it.queuedAt).getTime()) < 3 * 60 * 1000 && key(it.payload) === key(mine);
     });
+    // Deluxe has several chairs, so a few identical sales together are normal; only
+    // ask once they would exceed the number of chairs (King: 1 chair, so the 2nd asks).
+    return same.length >= (units || 1);
   } catch (e) { return false; }
 };
 

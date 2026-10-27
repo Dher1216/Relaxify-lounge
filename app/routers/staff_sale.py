@@ -214,13 +214,20 @@ def submit_sale(
     this_remarks = " ".join(remarks_bits)
     if confirm_duplicate != "1":
         window_start = datetime.datetime.utcnow() - datetime.timedelta(minutes=DUPLICATE_WINDOW_MINUTES)
-        recent = (
+        recent_list = (
             db.query(Transaction)
             .filter(Transaction.created_by == user.username, Transaction.status == "ACTIVE",
                     Transaction.chair_type == chair_type, Transaction.duration_minutes == duration_minutes,
                     Transaction.remarks == this_remarks, Transaction.created_at >= window_start)
-            .order_by(Transaction.id.desc()).first()
+            .order_by(Transaction.id.desc()).all()
         )
+        # Only ask once the identical sales in the window have used up every chair of
+        # this type: Deluxe has 3 chairs, so up to 3 identical sales close together are
+        # normal; King has 1, so a second identical one within minutes can't be a new
+        # customer. (The window is far shorter than any session, so no chair can have
+        # finished and been reused inside it.)
+        units = max(1, int(settings.get(f"chair_units_{chair_type.lower()}", 1) or 1))
+        recent = recent_list[0] if len(recent_list) >= units else None
         if recent:
             seconds = int((datetime.datetime.utcnow() - recent.created_at).total_seconds())
             from ..accounting import current_chair_rates

@@ -129,7 +129,8 @@ const rateMap = {{ rate_map | tojson }};
 const settings = {
   shortThreshold: {{ settings.get('eye_massager_short_threshold', 15) }},
   freeThreshold: {{ settings.get('eye_massager_free_threshold', 30) }},
-  shortPrice: {{ settings.get('eye_massager_short_price', 20) }}
+  shortPrice: {{ settings.get('eye_massager_short_price', 20) }},
+  chairUnits: { Deluxe: {{ settings.get('chair_units_deluxe', 3) }}, King: {{ settings.get('chair_units_king', 1) }} }
 };
 
 function updateDurations() {
@@ -251,7 +252,7 @@ document.getElementById('saleForm').addEventListener('submit', function (e) {
     const form = this;
     if (window.queueOfflineSale) {
       const data = new FormData(form);
-      const check = window.recentQueuedDuplicate ? window.recentQueuedDuplicate(data) : Promise.resolve(false);
+      const check = window.recentQueuedDuplicate ? window.recentQueuedDuplicate(data, settings.chairUnits[data.get('chair_type')] || 1) : Promise.resolve(false);
       check.then(function (isDup) {
         if (isDup && !window.confirm('An identical sale was just saved on this phone and is waiting to send. Is this a DIFFERENT customer?\n\nOK = record another\nCancel = do not record')) {
           btn.disabled = false; btn.innerText = 'Submit Sale'; submitting = false;
