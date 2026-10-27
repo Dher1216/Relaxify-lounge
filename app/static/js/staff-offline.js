@@ -53,6 +53,30 @@ window.queueOfflineSale = async function (formData) {
   }
 };
 
+// True if an identical sale (same chair, minutes, add-on, discount) was queued on
+// this phone in the last few minutes and hasn't been sent yet - used to ask
+// "different customer?" before queueing the same sale twice while offline.
+window.recentQueuedDuplicate = async function (formData) {
+  try {
+    const db = await openQueueDB();
+    const items = await new Promise(function (resolve, reject) {
+      const req = db.transaction("sales", "readonly").objectStore("sales").getAll();
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+    const now = Date.now();
+    const key = function (o) {
+      return [o.chair_type, String(o.duration_minutes), o.eye_massager === "1" ? "1" : "0",
+              o.discount_type || "NONE", o.promo_percent || "", (o.pwd_senior_id || "").trim()].join("|");
+    };
+    const mine = {};
+    formData.forEach(function (v, k) { mine[k] = v; });
+    return items.some(function (it) {
+      return (now - new Date(it.queuedAt).getTime()) < 3 * 60 * 1000 && key(it.payload) === key(mine);
+    });
+  } catch (e) { return false; }
+};
+
 function updatePendingBanner(count) {
   const el = document.getElementById("pendingBanner");
   if (!el) return;

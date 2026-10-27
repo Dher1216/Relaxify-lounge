@@ -9,6 +9,20 @@
 
   {% if saved_ref %}<div class="success-msg" style="text-align:center">Sale recorded &mdash; {{ saved_ref }}</div>{% endif %}
   {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+  {% if dup %}
+  <div class="card" style="border-color:var(--gold);text-align:center">
+    <h3 style="color:var(--gold-bright);margin-top:0">Same sale already recorded</h3>
+    <p>An identical sale was recorded <strong>{{ dup.ago }} ago</strong> ({{ dup.ref }}):<br>
+      <strong>{{ dup.summary }}</strong> &mdash; &#8369;{{ dup.net }}</p>
+    <p style="color:#ccc;font-size:0.9rem">Is this a <strong>different customer</strong>? If you are only unsure whether the first one saved, choose No &mdash; it did.</p>
+    <form method="post" action="/staff/sale" style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+      {% for k, v in dup.fields.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <input type="hidden" name="confirm_duplicate" value="1">
+      <button type="submit">Yes, record another</button>
+      <a class="btn btn-secondary" href="/staff/sale" style="text-decoration:none;display:inline-block;padding:10px 16px">No, cancel</a>
+    </form>
+  </div>
+  {% endif %}
   <div id="offlineBanner" class="error-msg" style="display:none;background:rgba(201,162,75,0.15);border-color:var(--gold);color:var(--gold-bright);text-align:center">
     No connection right now &mdash; this sale will save on your phone and send automatically once you're back online.
   </div>
@@ -236,7 +250,16 @@ document.getElementById('saleForm').addEventListener('submit', function (e) {
     e.preventDefault();
     const form = this;
     if (window.queueOfflineSale) {
-      window.queueOfflineSale(new FormData(form)).then(function () {
+      const data = new FormData(form);
+      const check = window.recentQueuedDuplicate ? window.recentQueuedDuplicate(data) : Promise.resolve(false);
+      check.then(function (isDup) {
+        if (isDup && !window.confirm('An identical sale was just saved on this phone and is waiting to send. Is this a DIFFERENT customer?\n\nOK = record another\nCancel = do not record')) {
+          btn.disabled = false; btn.innerText = 'Submit Sale'; submitting = false;
+          return null;
+        }
+        return window.queueOfflineSale(data).then(function () { return true; });
+      }).then(function (queued) {
+        if (!queued) return;
         // The queued copy now owns this token. Clear the form so the same sale
         // can't be tapped in a second time by mistake.
         lsDel(TOKEN_KEY);
