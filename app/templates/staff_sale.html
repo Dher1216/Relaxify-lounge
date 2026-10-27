@@ -172,31 +172,86 @@ function genToken() {
   return 'tok-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 }
 
-// Generate a fresh idempotency token as soon as the page loads, and again after
-// any successful submit - so every distinct sale gets its own unique token, but
-// a retry/resubmit of the SAME attempt (e.g. a slow network causing a second
-// click, or an offline queue re-sending) always carries the SAME token and can
-// never create a duplicate transaction.
+// ---- Duplicate-sale protection -------------------------------------------
+// Every sale carries a unique token; the server ignores a token it has already
+// saved. The token is remembered on the phone (together with what was typed)
+// until the "Sale recorded" page has actually been seen, so if the page hangs,
+// reloads, or the signal drops AFTER the server saved the sale, sending the same
+// sale again reuses the same token and can never create a second transaction.
+// A different sale (different chair/duration/etc.) always gets a new token, and
+// so does the next sale after a confirmed success.
+const TOKEN_KEY = 'relaxify_sale_token';
+const TOKEN_MAX_AGE_MS = 15 * 60 * 1000;
+
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
+
+function saleSignature() {
+  return JSON.stringify([
+    document.getElementById('txnDate').value,
+    document.getElementById('chairType').value,
+    document.getElementById('duration').value,
+    document.getElementById('eyeMassager').checked,
+    document.getElementById('discountType').value,
+    document.getElementById('pwdSeniorId').value.trim(),
+    document.getElementById('promoPercent').value,
+  ]);
+}
+
+function tokenForThisSale() {
+  const sig = saleSignature();
+  try {
+    const saved = JSON.parse(lsGet(TOKEN_KEY) || 'null');
+    if (saved && saved.sig === sig && (Date.now() - saved.ts) < TOKEN_MAX_AGE_MS) return saved.token;
+  } catch (e) {}
+  const token = genToken();
+  lsSet(TOKEN_KEY, JSON.stringify({ token: token, sig: sig, ts: Date.now() }));
+  return token;
+}
+
+// The "Sale recorded" page was shown, so the server definitely has that sale:
+// the next sale starts fresh.
+if (new URLSearchParams(location.search).has('saved_ref')) lsDel(TOKEN_KEY);
+
 document.getElementById('clientToken').value = genToken();
 
+// Coming back to this page with the Back button would show a filled-in form that
+// is one tap away from re-sending the last sale. Always start from a clean form.
+window.addEventListener('pageshow', function (e) {
+  if (e.persisted) location.reload();
+});
+
+let submitting = false;
 document.getElementById('saleForm').addEventListener('submit', function (e) {
+  if (submitting) { e.preventDefault(); return; }   // ignore double-taps
+  submitting = true;
   document.getElementById('occurredAt').value = new Date().toISOString();
+  document.getElementById('clientToken').value = tokenForThisSale();
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
   btn.innerText = 'Submitting...';
   if (!navigator.onLine) {
     // Offline handling (queueing + background sync) lives in staff-offline.js
     e.preventDefault();
+    const form = this;
     if (window.queueOfflineSale) {
-      window.queueOfflineSale(new FormData(this)).then(function () {
+      window.queueOfflineSale(new FormData(form)).then(function () {
+        // The queued copy now owns this token. Clear the form so the same sale
+        // can't be tapped in a second time by mistake.
+        lsDel(TOKEN_KEY);
+        form.reset();
+        updateDurations(); toggleDiscountFields(); recalcTotal();
+        document.getElementById('clientToken').value = genToken();
         document.getElementById('offlineBanner').style.display = 'block';
         btn.disabled = false;
         btn.innerText = 'Submit Sale';
-        document.getElementById('clientToken').value = genToken();
+        submitting = false;
       });
     } else {
       btn.disabled = false;
       btn.innerText = 'Submit Sale';
+      submitting = false;
     }
   }
 });

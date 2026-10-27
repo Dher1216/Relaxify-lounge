@@ -181,6 +181,23 @@ def _auto_add_missing_columns():
 
 _auto_add_missing_columns()
 
+
+def _ensure_unique_tokens():
+    """A column added later by _auto_add_missing_columns() gets no UNIQUE rule, so on an
+    older database the duplicate-sale guard (client_token) was only a check, not a
+    guarantee: two copies arriving at the same instant could both get through. This
+    adds the UNIQUE index if it is missing. If old duplicate tokens already exist the
+    index can't be built - that is logged and the app carries on as before."""
+    for table in ("transactions", "sock_entries"):
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(f"CREATE UNIQUE INDEX IF NOT EXISTS uq_{table}_client_token ON {table} (client_token)"))
+        except Exception as e:  # noqa: BLE001
+            print(f"[unique-token] could not add unique index on {table}.client_token: {e}")
+
+
+_ensure_unique_tokens()
+
 from . import seed as _seed
 _seed.run()
 

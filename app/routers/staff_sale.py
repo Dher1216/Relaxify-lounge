@@ -226,6 +226,13 @@ def submit_sale(
         db.commit()
     except Exception as e:
         db.rollback()
+        # Two copies of the same sale arriving at the same instant (e.g. a retry racing
+        # an offline sync): one wins, the other lands here. If the sale is already
+        # saved under this token, that is a success, not an error.
+        if client_token:
+            existing = db.query(Transaction).filter(Transaction.client_token == client_token).first()
+            if existing:
+                return RedirectResponse(f"/staff/sale?saved_ref={existing.reference_number}", status_code=303)
         detail = f" (Technical detail for admin: {type(e).__name__}: {e})" if user.role == "ADMIN" else ""
         return render_error(f"Unable to save this sale.{detail}")
 

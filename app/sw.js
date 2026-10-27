@@ -143,7 +143,16 @@ self.addEventListener("message", (event) => {
   }
 });
 
-async function syncQueuedSales() {
+// Only one sync run at a time: the browser's Background Sync and the page's "back
+// online" nudge can both fire at once, and two parallel runs would send every
+// queued sale twice.
+let syncRun = null;
+function syncQueuedSales() {
+  if (!syncRun) syncRun = runSync().finally(() => { syncRun = null; });
+  return syncRun;
+}
+
+async function runSync() {
   const db = await openQueueDB();
   const items = await getAllQueued(db);
   for (const item of items) {
