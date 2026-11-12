@@ -31,7 +31,9 @@ Log in, then go to Others -> Users -> "Change My Password" and set your own. Exi
 STAFF-role users only see a simplified sale screen (`/staff/sale`) built for weak or no signal: each sale is saved on the phone first, then sent in the background and retried automatically. A unique token per sale means it can never be recorded twice.
 
 - **Discounts:** PWD/Senior (20%, requires an ID number) and Promotional (custom %). Discounts post to accounts 4201 / 4202 under "Sales Discounts" (4200).
-- **If a sale shows "not accepted: ..."** the server refused it and the message gives the reason (for example, a missing PWD/Senior ID). Tap **Discard**, then enter the sale again correctly.
+- **PWD/Senior ID is mandatory.** The Submit button will not save a PWD/Senior sale with a blank (or spaces-only) ID, and a promo needs a percentage. The sale is simply not recorded until it is filled in.
+- **Cancel an unsent sale:** every sale still waiting to send shows a **Cancel sale** button. Tap it to remove the sale from the phone.
+- **Rejected sales clear themselves.** If the server refuses a sale because it breaks a rule (for example an old copy of the form let a blank ID through), the phone shows "NOT RECORDED: reason", removes it from the queue so it does **not** come back the next day, and the server logs it in the **Audit Trail** as "REJECTED unsent sale" so the admin/accountant can see what was entered and re-enter it. Sales waiting only because of a temporary problem (no signal, server busy) keep retrying.
 - An "A required account is missing or inactive" message means account 4201/4202 (or 1000, 4101-4103) was deactivated or its code changed under Account Codes - reactivate it or restore the code.
 
 ---

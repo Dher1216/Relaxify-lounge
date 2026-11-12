@@ -68,7 +68,7 @@
 
       <div id="pwdField" style="display:none">
         <label>PWD / Senior ID Number</label>
-        <input type="text" name="pwd_senior_id" id="pwdSeniorId">
+        <input type="text" name="pwd_senior_id" id="pwdSeniorId" pattern=".*\S.*" title="Enter the PWD / Senior ID number">
       </div>
       <div id="promoField" style="display:none">
         <label>Promo Discount %</label>
@@ -253,6 +253,24 @@ document.getElementById('saleForm').addEventListener('submit', function (e) {
 function handleSale(form) {
   if (submitting) return;                              // ignore double-taps
   if (!form.reportValidity()) return;
+
+  // Explicit checks (do not rely only on the HTML "required" attribute, which accepts a
+  // few spaces and can be missing on an old saved copy of this page). A sale that breaks
+  // these rules is NEVER saved or queued.
+  const dtype = document.getElementById('discountType').value;
+  if (dtype === 'PWD_SENIOR' && !document.getElementById('pwdSeniorId').value.trim()) {
+    alert('PWD / Senior ID number is required. This sale was NOT recorded - enter the ID number first.');
+    document.getElementById('pwdSeniorId').focus();
+    return;
+  }
+  if (dtype === 'PROMO') {
+    const pct = parseFloat(document.getElementById('promoPercent').value);
+    if (!(pct > 0 && pct <= 100)) {
+      alert('Enter the promo discount % (more than 0, up to 100). This sale was NOT recorded.');
+      document.getElementById('promoPercent').focus();
+      return;
+    }
+  }
   submitting = true;
 
   document.getElementById('occurredAt').value = new Date().toISOString();

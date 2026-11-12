@@ -78,30 +78,50 @@ function addPendingRow(payload) {
   tr.appendChild(t); tr.appendChild(d);
   body.insertBefore(tr, body.firstChild);
   setRowStatus(tr, "pending", "⏳ sending…");
+  addDiscardButton(tr, payload.client_token);
 }
-// A sale the server keeps refusing (e.g. missing PWD/Senior ID) would otherwise sit in the
-// queue forever. This lets staff remove it from the phone and enter it again correctly.
-function addDiscardButton(tr, queueId) {
+// Staff can always remove an unsent sale from this phone (e.g. entered by mistake, or the
+// server keeps refusing it). Looked up by the sale's token, so it works for any row.
+function addDiscardButton(tr, token) {
   if (tr.querySelector(".discard-btn")) return;
   const b = document.createElement("button");
-  b.type = "button"; b.className = "discard-btn"; b.textContent = "Discard";
+  b.type = "button"; b.className = "discard-btn"; b.textContent = "Cancel sale";
   b.style.cssText = "margin-left:8px;padding:2px 8px;font-size:.75rem;width:auto";
   b.onclick = async function () {
-    if (!confirm("Remove this unsent sale from the phone? You will need to enter it again.")) return;
+    if (!confirm("Cancel this UNSENT sale? It will be removed from this phone and will NOT be recorded.")) return;
     try {
       const db = await openQueueDB();
-      await idbRemove(db, queueId);
+      const items = await idbAll(db);
+      for (const it of items) { if (it.payload.client_token === token) await idbRemove(db, it.id); }
       tr.remove();
       updatePendingBanner((await idbAll(db)).length);
-      const countEl = document.getElementById("todaysSalesCount");
-      if (countEl) countEl.innerText = Math.max(0, (parseInt(countEl.innerText, 10) || 1) - 1);
+      adjustTodaysCount(-1);
     } catch (e) {}
   };
-  tr.querySelector("td:last-child").appendChild(b);
+  const cell = tr.querySelector("td:last-child");
+  if (cell) cell.appendChild(b);
+}
+function adjustTodaysCount(delta) {
+  const el = document.getElementById("todaysSalesCount");
+  if (el) el.innerText = Math.max(0, (parseInt(el.innerText, 10) || 0) + delta);
+}
+// The server said this sale breaks a rule and can never be recorded. It is cleared from the
+// queue (so it does not come back every day) and the reason stays on screen.
+function markRejected(token, reason) {
+  const tr = rowFor(token);
+  if (tr) {
+    setRowStatus(tr, "error", "\u2717 NOT RECORDED: " + reason + " Enter it again.");
+    const btn = tr.querySelector(".discard-btn"); if (btn) btn.remove();
+    tr.dataset.rejected = "1";
+    adjustTodaysCount(-1);
+  }
 }
 function markSent(token, ref) {
   const tr = rowFor(token);
-  if (tr) setRowStatus(tr, "sent", "✓ " + (ref || "saved"));
+  if (tr) {
+    setRowStatus(tr, "sent", "✓ " + (ref || "saved"));
+    const btn = tr.querySelector(".discard-btn"); if (btn) btn.remove();
+  }
 }
 
 function updatePendingBanner(count, authProblem) {
@@ -177,9 +197,14 @@ window.syncNow = async function () {
           markSent(item.payload.client_token, result.reference_number);
         } else {
           const tr = rowFor(item.payload.client_token);
-          if (tr) {
-            setRowStatus(tr, "error", "⚠ not accepted: " + (result.error || "will retry"));
-            addDiscardButton(tr, item.id);
+          if (result.permanent) {
+            // Can never succeed: stop retrying and clear it from the queue.
+            await idbRemove(db, item.id);
+            markRejected(item.payload.client_token, result.error || "Sale rejected.");
+            alert("A sale was NOT recorded:\n\n" + item.payload.chair_type + " " + item.payload.duration_minutes +
+                  " min\n" + (result.error || "Sale rejected.") + "\n\nPlease enter it again with the correct details.");
+          } else if (tr) {
+            setRowStatus(tr, "error", "⚠ not accepted yet: " + (result.error || "will retry"));
           }
         }
       } catch (err) {
@@ -204,6 +229,10 @@ setInterval(window.syncNow, 10000);
 // The service worker tells us when it sent a sale while this page was open.
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", function (event) {
+    if (event.data && event.data.type === "SALE_REJECTED") {
+      markRejected(event.data.clientToken, event.data.error);
+      window.syncNow();
+    }
     if (event.data && event.data.type === "SALE_SYNCED") {
       markSent(event.data.clientToken, event.data.referenceNumber);
       window.syncNow(); // refresh the waiting-count banner

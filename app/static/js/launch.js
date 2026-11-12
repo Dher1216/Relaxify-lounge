@@ -51,10 +51,20 @@
     ping();
   }
 
+  var badReplies = 0;
+
   function ping() {
     fetch("/session-ping", { cache: "no-store", credentials: "same-origin", headers: { Accept: "application/json" } })
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (!r.ok) throw new Error("bad status");
+        return r.json();
+      })
       .then(function (d) {
+        // Only trust a proper reply. Anything else (e.g. {"detail":"Not Found"}) must never
+        // be used as a destination - that is what used to send people to /undefined.
+        if (!d || d.awake !== true || typeof d.home !== "string" || d.home.charAt(0) !== "/") {
+          throw new Error("unexpected reply");
+        }
         finish(); // cancel the timer on success
         if (d.logged_in) lsSet("relaxify_last_home", d.home); else lsDel("relaxify_last_home");
         var target = next;
@@ -64,6 +74,9 @@
       .catch(function () {
         if (navigator.onLine === false) { goOffline(); return; }
         // Online but no valid answer yet (server still waking): keep trying quietly.
+        // After several bad answers in a row, stop waiting and open the login page.
+        badReplies += 1;
+        if (badReplies >= 5) { finish(); location.replace("/login"); return; }
         setTimeout(ping, 3000);
       });
   }

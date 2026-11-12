@@ -12,7 +12,7 @@
 
 const BUILD = "__BUILD__";
 const SHELL_CACHE = "app-shell-" + BUILD;
-const STAFF_CACHE = "staff-page-v1";
+const STAFF_CACHE = "staff-page-v2"; // bumped: drops saved copies of the old sale form
 
 // CSS/JS are saved under TWO addresses: plain (used by the launcher page) and with
 // ?v=<build> (used by the app's pages, so each page always gets its own build's script).
@@ -182,6 +182,10 @@ async function runSync() {
       if (result.ok) {
         await removeQueued(db, item.id);
         notifyClients({ type: "SALE_SYNCED", clientToken: item.payload.client_token, referenceNumber: result.reference_number });
+      } else if (result.permanent) {
+        // Breaks a rule (e.g. missing PWD/Senior ID): can never succeed, so stop retrying.
+        await removeQueued(db, item.id);
+        notifyClients({ type: "SALE_REJECTED", clientToken: item.payload.client_token, error: result.error });
       }
     } catch (err) {
       break; // still offline / server unreachable - leave queued
