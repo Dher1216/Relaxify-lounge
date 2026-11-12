@@ -160,6 +160,11 @@ function toggleDiscountFields() {
   const type = document.getElementById('discountType').value;
   document.getElementById('pwdField').style.display = type === 'PWD_SENIOR' ? 'block' : 'none';
   document.getElementById('promoField').style.display = type === 'PROMO' ? 'block' : 'none';
+  // Required only while visible (a hidden required field would silently block Submit).
+  // Without this, a PWD/Senior sale could be "saved" on the phone without an ID, and the
+  // server would then reject it on every retry.
+  document.getElementById('pwdSeniorId').required = (type === 'PWD_SENIOR');
+  document.getElementById('promoPercent').required = (type === 'PROMO');
 }
 
 function recalcTotal() {

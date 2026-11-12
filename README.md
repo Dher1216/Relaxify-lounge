@@ -6,7 +6,7 @@ frontend (no separate JS build step), PostgreSQL in production / SQLite for loca
 
 ## What's included
 
-- Login (bcrypt-hashed passwords), session-based auth, two seeded accounts
+- Login (bcrypt-hashed passwords), session-based auth, two starter accounts (see "First login")
 - Dashboard, Receipts & Disbursements entry with true double-entry validation
 - Trial Balance, Income Statement, Balance Sheet, Statement of Changes in Equity,
   Statement of Cash Flows, Notes to Financial Statements, Daily Transaction Report
@@ -15,16 +15,24 @@ frontend (no separate JS build step), PostgreSQL in production / SQLite for loca
 - Full audit trail (logins, transactions, void reasons, account/user changes, report generation)
 - Transactions are voided, never deleted — history is preserved
 
-## Initial users (change these passwords after first login)
+## First login
 
-| Username   | Password        | Role       |
-|------------|-----------------|------------|
-| Dher       | Derps1216       | ADMIN      |
-| OdessaSan  | Teebuskuipee16  | ACCOUNTANT |
+The source code no longer contains any passwords. On a **brand-new** database, the two starter accounts (`Dher` - ADMIN, `OdessaSan` - ACCOUNTANT) are created with:
 
-**Important:** these are seeded for you to get started. Log in and use Others → Users →
-"Change My Password" to set your own passwords as soon as you're deployed. Anyone with
-access to the source code can see this table, so don't reuse these passwords elsewhere.
+- the passwords you set in the `INITIAL_ADMIN_PASSWORD` / `INITIAL_ACCOUNTANT_PASSWORD` environment variables, **or**
+- if those aren't set, a random one-time password that is printed once in the startup log (on Render: the service's **Logs** tab).
+
+Log in, then go to Others -> Users -> "Change My Password" and set your own. Existing users are never modified by the seed, so this doesn't affect a database that is already running.
+
+---
+
+## Staff "Record a Sale" screen
+
+STAFF-role users only see a simplified sale screen (`/staff/sale`) built for weak or no signal: each sale is saved on the phone first, then sent in the background and retried automatically. A unique token per sale means it can never be recorded twice.
+
+- **Discounts:** PWD/Senior (20%, requires an ID number) and Promotional (custom %). Discounts post to accounts 4201 / 4202 under "Sales Discounts" (4200).
+- **If a sale shows "not accepted: ..."** the server refused it and the message gives the reason (for example, a missing PWD/Senior ID). Tap **Discard**, then enter the sale again correctly.
+- An "A required account is missing or inactive" message means account 4201/4202 (or 1000, 4101-4103) was deactivated or its code changed under Account Codes - reactivate it or restore the code.
 
 ---
 
@@ -39,7 +47,7 @@ python -m app.seed        # creates relaxify.db (SQLite), imports your 52 accoun
 uvicorn app.main:app --reload
 ```
 
-Visit http://localhost:8000 — log in with the credentials above.
+Visit http://localhost:8000 — log in with the one-time password printed by the seed command (see "First login").
 
 Re-running `python -m app.seed` is safe; it only adds accounts/users that don't already exist.
 

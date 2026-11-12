@@ -79,6 +79,26 @@ function addPendingRow(payload) {
   body.insertBefore(tr, body.firstChild);
   setRowStatus(tr, "pending", "⏳ sending…");
 }
+// A sale the server keeps refusing (e.g. missing PWD/Senior ID) would otherwise sit in the
+// queue forever. This lets staff remove it from the phone and enter it again correctly.
+function addDiscardButton(tr, queueId) {
+  if (tr.querySelector(".discard-btn")) return;
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "discard-btn"; b.textContent = "Discard";
+  b.style.cssText = "margin-left:8px;padding:2px 8px;font-size:.75rem;width:auto";
+  b.onclick = async function () {
+    if (!confirm("Remove this unsent sale from the phone? You will need to enter it again.")) return;
+    try {
+      const db = await openQueueDB();
+      await idbRemove(db, queueId);
+      tr.remove();
+      updatePendingBanner((await idbAll(db)).length);
+      const countEl = document.getElementById("todaysSalesCount");
+      if (countEl) countEl.innerText = Math.max(0, (parseInt(countEl.innerText, 10) || 1) - 1);
+    } catch (e) {}
+  };
+  tr.querySelector("td:last-child").appendChild(b);
+}
 function markSent(token, ref) {
   const tr = rowFor(token);
   if (tr) setRowStatus(tr, "sent", "✓ " + (ref || "saved"));
@@ -157,7 +177,10 @@ window.syncNow = async function () {
           markSent(item.payload.client_token, result.reference_number);
         } else {
           const tr = rowFor(item.payload.client_token);
-          if (tr) setRowStatus(tr, "error", "⚠ not accepted yet - will retry");
+          if (tr) {
+            setRowStatus(tr, "error", "⚠ not accepted: " + (result.error || "will retry"));
+            addDiscardButton(tr, item.id);
+          }
         }
       } catch (err) {
         clearTimeout(timer);

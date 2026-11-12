@@ -13,10 +13,18 @@ from .models import User, Account, AuditLog, ChairRate, Setting
 from .auth import hash_password
 from .coa_seed import COA_SEED
 
+# Passwords are NOT stored in the source code (this repo may be public). For a brand-new
+# database, set INITIAL_ADMIN_PASSWORD / INITIAL_ACCOUNTANT_PASSWORD as environment
+# variables before the first start. If they are not set, a random password is generated
+# and printed ONCE in the startup log - copy it, log in, and change it immediately.
+# Users that already exist are never touched, so this has no effect on a live database.
+import os
+import secrets
+
 INITIAL_USERS = [
-    # username, password, role
-    ("Dher", "Derps1216", "ADMIN"),
-    ("OdessaSan", "Teebuskuipee16", "ACCOUNTANT"),
+    # username, env var holding the initial password, role
+    ("Dher", "INITIAL_ADMIN_PASSWORD", "ADMIN"),
+    ("OdessaSan", "INITIAL_ACCOUNTANT_PASSWORD", "ACCOUNTANT"),
 ]
 
 # Sub-accounts to add under an existing parent, keyed by the PARENT's code.
@@ -140,9 +148,13 @@ def run():
         # --- Users ---
         existing_usernames = {u.username for u in db.query(User).all()}
         added_users = 0
-        for username, password, role in INITIAL_USERS:
+        for username, env_var, role in INITIAL_USERS:
             if username in existing_usernames:
                 continue
+            password = os.environ.get(env_var)
+            if not password:
+                password = secrets.token_urlsafe(12)
+                print(f"[seed] Generated one-time password for {username}: {password}  (change it after first login)")
             db.add(User(username=username, password_hash=hash_password(password), role=role, is_active=True))
             added_users += 1
 

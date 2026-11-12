@@ -323,4 +323,8 @@ async def submit_sale_api(request: Request, db: Session = Depends(get_db)):
         ref = result.headers["location"].split("saved_ref=")[-1]
         return JSONResponse({"ok": True, "reference_number": ref})
     else:
-        return JSONResponse({"ok": False, "error": "This sale could not be saved. It will remain queued and retry automatically."}, status_code=400)
+        # Pass the real reason back (e.g. "PWD/Senior ID number is required...") so the
+        # phone can show it instead of retrying silently forever.
+        ctx = getattr(result, "context", None) or {}
+        reason = ctx.get("error") or "This sale could not be saved."
+        return JSONResponse({"ok": False, "error": reason}, status_code=400)
