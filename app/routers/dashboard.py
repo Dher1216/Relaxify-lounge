@@ -10,6 +10,7 @@ from sqlalchemy import func
 from ..database import get_db
 from ..auth import get_current_user
 from ..models import Transaction, TransactionLine, Account
+from ..accounting import balances_by_account, net_from_totals
 
 router = APIRouter()
 
@@ -40,15 +41,19 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         prevents that cross-transaction cancellation entirely."""
         if not txns:
             return Decimal("0.00")
-        total = Decimal("0.00")
-        for t in txns:
-            net = (
-                db.query(func.coalesce(func.sum(TransactionLine.debit - TransactionLine.credit), 0))
-                .join(Account, Account.id == TransactionLine.account_id)
-                .filter(TransactionLine.transaction_id == t.id)
-                .filter(Account.is_cash_account == True)  # noqa: E712
-                .scalar()
+        per_txn = (  # one query for all transactions (used to be one query per sale)
+            db.query(
+                TransactionLine.transaction_id,
+                func.coalesce(func.sum(TransactionLine.debit - TransactionLine.credit), 0),
             )
+            .join(Account, Account.id == TransactionLine.account_id)
+            .filter(TransactionLine.transaction_id.in_([t.id for t in txns]))
+            .filter(Account.is_cash_account == True)  # noqa: E712
+            .group_by(TransactionLine.transaction_id)
+            .all()
+        )
+        total = Decimal("0.00")
+        for _tid, net in per_txn:
             total += abs(Decimal(net))
         return total
 
@@ -81,22 +86,13 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             todays_sales_txn_ids.add(line.transaction_id)
     todays_sales_count = len(todays_sales_txn_ids)
 
+    month_totals = balances_by_account(db, as_of=today, from_date=month_start)
+
     def sum_type_for_period(account_type, start, end):
         total = Decimal("0.00")
         accounts = db.query(Account).filter(Account.account_type == account_type, Account.is_active == True).all()  # noqa: E712
         for acc in accounts:
-            q = (
-                db.query(
-                    func.coalesce(func.sum(TransactionLine.debit), 0),
-                    func.coalesce(func.sum(TransactionLine.credit), 0),
-                )
-                .join(Transaction, Transaction.id == TransactionLine.transaction_id)
-                .filter(TransactionLine.account_id == acc.id)
-                .filter(Transaction.status == "ACTIVE")
-                .filter(Transaction.transaction_date >= start, Transaction.transaction_date <= end)
-            )
-            d, c = q.first()
-            d, c = Decimal(d), Decimal(c)
+            d, c = month_totals.get(acc.id, (Decimal("0"), Decimal("0")))
             total += (c - d) if acc.normal_balance == "Credit" else (d - c)
         return total
 
@@ -107,24 +103,16 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     cash_accounts = db.query(Account).filter(Account.is_active == True, Account.is_cash_account == True).order_by(Account.code).all()  # noqa: E712
     cash_breakdown = []  # [{name, balance}, ...] - one entry per actual cash/bank/e-wallet account
     cash_balance = Decimal("0.00")
+    all_time = balances_by_account(db)
     for acc in cash_accounts:
-        q = (
-            db.query(
-                func.coalesce(func.sum(TransactionLine.debit), 0),
-                func.coalesce(func.sum(TransactionLine.credit), 0),
-            )
-            .join(Transaction, Transaction.id == TransactionLine.transaction_id)
-            .filter(TransactionLine.account_id == acc.id)
-            .filter(Transaction.status == "ACTIVE")
-        )
-        d, c = q.first()
-        acc_balance = Decimal(d) - Decimal(c)
+        d, c = all_time.get(acc.id, (Decimal("0"), Decimal("0")))
+        acc_balance = d - c
         cash_balance += acc_balance
         cash_breakdown.append({"name": acc.name, "balance": acc_balance})
 
     recent = (
         db.query(Transaction)
-        .order_by(Transaction.created_at.desc())
+        .order_by(Transaction.created_at.desc(), Transaction.id.desc())
         .limit(10)
         .all()
     )

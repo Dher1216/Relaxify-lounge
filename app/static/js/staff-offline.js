@@ -1,14 +1,14 @@
-// Staff "Record a Sale" engine: SAVE FIRST, SEND IN THE BACKGROUND.
-//
-// Every sale is written to this phone the moment Submit is tapped, so the screen
-// can say "Saved" at once - with full signal, weak signal or none. The sale is then
-// sent to the server in the background, retried automatically until it gets
-// through, and its row in the Deluxe/King list changes from "sending" to the
-// receipt number. Staff never see a hanging page or a connection error, so there is
-// never a reason to enter the same sale twice. The same unique token travels with
-// the sale on every retry, so the server can never record it twice either.
-//
-// (The service worker also sends waiting sales when the app is closed - see sw.js.)
+// Registers the service worker and gives the sale form a way to queue a
+// submission locally when there's no connection (window.queueOfflineSale).
+
+if ("serviceWorker" in navigator) {
+  // Registered from the site root (not /static/) so its default scope covers the
+  // whole app, including /staff/sale - a service worker can only control pages
+  // under the same path it's served from unless it's served from root.
+  navigator.serviceWorker.register("/service-worker.js", { scope: "/" }).catch(function (err) {
+    console.warn("Service worker registration failed:", err);
+  });
+}
 
 function openQueueDB() {
   return new Promise(function (resolve, reject) {
@@ -20,14 +20,8 @@ function openQueueDB() {
     req.onerror = function () { reject(req.error); };
   });
 }
-function idbAll(db) {
-  return new Promise(function (resolve, reject) {
-    const req = db.transaction("sales", "readonly").objectStore("sales").getAll();
-    req.onsuccess = function () { resolve(req.result); };
-    req.onerror = function () { reject(req.error); };
-  });
-}
-function idbAdd(db, payload) {
+
+function addQueued(db, payload) {
   return new Promise(function (resolve, reject) {
     const tx = db.transaction("sales", "readwrite");
     tx.objectStore("sales").add({ payload: payload, queuedAt: new Date().toISOString() });
@@ -35,233 +29,78 @@ function idbAdd(db, payload) {
     tx.onerror = function () { reject(tx.error); };
   });
 }
-function idbRemove(db, id) {
+
+function countQueued(db) {
   return new Promise(function (resolve, reject) {
-    const tx = db.transaction("sales", "readwrite");
-    tx.objectStore("sales").delete(id);
-    tx.oncomplete = function () { resolve(); };
-    tx.onerror = function () { reject(tx.error); };
+    const tx = db.transaction("sales", "readonly");
+    const req = tx.objectStore("sales").count();
+    req.onsuccess = function () { resolve(req.result); };
+    req.onerror = function () { reject(req.error); };
   });
 }
 
-// ---------------- Rows in the Deluxe / King lists ----------------
-function tbodyFor(chair) {
-  return document.getElementById(chair === "King" ? "kingRows" : "deluxeRows");
-}
-function manilaTime(iso) {
-  try {
-    return new Date(iso).toLocaleTimeString("en-US", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit" });
-  } catch (e) { return ""; }
-}
-function describe(p) {
-  return p.chair_type + " " + p.duration_minutes + "min" + (p.eye_massager === "1" ? " + Eye Massager" : "");
-}
-function rowFor(token) {
-  return document.querySelector('tr[data-token="' + token + '"]');
-}
-function setRowStatus(tr, kind, text) {
-  const s = tr.querySelector(".sale-status");
-  if (!s) return;
-  s.textContent = text;
-  s.style.color = kind === "sent" ? "#7fd18b" : kind === "error" ? "#ff9b8a" : "var(--gold-bright, #e3c06a)";
-}
-function addPendingRow(payload) {
-  const body = tbodyFor(payload.chair_type);
-  if (!body || rowFor(payload.client_token)) return;
-  const empty = body.querySelector(".empty-row");
-  if (empty) empty.remove();
-  const tr = document.createElement("tr");
-  tr.dataset.token = payload.client_token;
-  const t = document.createElement("td"); t.textContent = manilaTime(payload.occurred_at);
-  const d = document.createElement("td"); d.textContent = describe(payload) + " ";
-  const s = document.createElement("span"); s.className = "sale-status"; d.appendChild(s);
-  tr.appendChild(t); tr.appendChild(d);
-  body.insertBefore(tr, body.firstChild);
-  setRowStatus(tr, "pending", "⏳ sending…");
-  addDiscardButton(tr, payload.client_token);
-}
-// Staff can always remove an unsent sale from this phone (e.g. entered by mistake, or the
-// server keeps refusing it). Looked up by the sale's token, so it works for any row.
-function addDiscardButton(tr, token) {
-  if (tr.querySelector(".discard-btn")) return;
-  const b = document.createElement("button");
-  b.type = "button"; b.className = "discard-btn"; b.textContent = "Cancel sale";
-  b.style.cssText = "margin-left:8px;padding:2px 8px;font-size:.75rem;width:auto";
-  b.onclick = async function () {
-    if (!confirm("Cancel this UNSENT sale? It will be removed from this phone and will NOT be recorded.")) return;
-    try {
-      const db = await openQueueDB();
-      const items = await idbAll(db);
-      for (const it of items) { if (it.payload.client_token === token) await idbRemove(db, it.id); }
-      tr.remove();
-      updatePendingBanner((await idbAll(db)).length);
-      adjustTodaysCount(-1);
-    } catch (e) {}
-  };
-  const cell = tr.querySelector("td:last-child");
-  if (cell) cell.appendChild(b);
-}
-function adjustTodaysCount(delta) {
-  const el = document.getElementById("todaysSalesCount");
-  if (el) el.innerText = Math.max(0, (parseInt(el.innerText, 10) || 0) + delta);
-}
-// The server said this sale breaks a rule and can never be recorded. It is cleared from the
-// queue (so it does not come back every day) and the reason stays on screen.
-function markRejected(token, reason) {
-  const tr = rowFor(token);
-  if (tr) {
-    setRowStatus(tr, "error", "\u2717 NOT RECORDED: " + reason + " Enter it again.");
-    const btn = tr.querySelector(".discard-btn"); if (btn) btn.remove();
-    tr.dataset.rejected = "1";
-    adjustTodaysCount(-1);
-  }
-}
-function markSent(token, ref) {
-  const tr = rowFor(token);
-  if (tr) {
-    setRowStatus(tr, "sent", "✓ " + (ref || "saved"));
-    const btn = tr.querySelector(".discard-btn"); if (btn) btn.remove();
-  }
-}
+// Called from the sale form's submit handler when navigator.onLine is false.
+window.queueOfflineSale = async function (formData) {
+  const payload = {};
+  formData.forEach(function (value, key) { payload[key] = value; });
 
-function updatePendingBanner(count, authProblem) {
+  const db = await openQueueDB();
+  await addQueued(db, payload);
+  const pending = await countQueued(db);
+  updatePendingBanner(pending);
+
+  // Ask for a Background Sync as soon as we're back online (Android/Chrome).
+  if ("serviceWorker" in navigator && "SyncManager" in window) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.sync.register("sync-offline-sales");
+    } catch (e) {
+      // Background Sync not available - the 'online' event listener below is the fallback.
+    }
+  }
+};
+
+function updatePendingBanner(count) {
   const el = document.getElementById("pendingBanner");
   if (!el) return;
-  if (authProblem) {
+  if (count > 0) {
     el.style.display = "block";
-    el.innerHTML = "Your sales are safe on this phone, but you need to <a href=\"/login\" style=\"color:inherit;text-decoration:underline\">log in again</a> to send them.";
-  } else if (count > 0) {
-    el.style.display = "block";
-    el.innerText = count + " sale" + (count === 1 ? "" : "s") + " saved on this phone, sending automatically.";
+    el.innerText = count + " sale" + (count === 1 ? "" : "s") + " saved on this device, waiting to send.";
   } else {
     el.style.display = "none";
   }
 }
-function updateConnectionBanner() {
-  const el = document.getElementById("offlineBanner");
-  if (el) el.style.display = navigator.onLine ? "none" : "block";
-}
 
-// ---------------- Save locally (called when Submit is tapped) ----------------
-// Resolves once the sale is safely stored on the phone. Rejects if the browser
-// can't store it (then the page falls back to sending directly).
-window.saveSaleLocally = async function (formData) {
-  const payload = {};
-  formData.forEach(function (value, key) { payload[key] = value; });
-  const db = await openQueueDB();
-  await idbAdd(db, payload);
-  addPendingRow(payload);
-  const countEl = document.getElementById("todaysSalesCount");
-  if (countEl) countEl.innerText = (parseInt(countEl.innerText, 10) || 0) + 1;
-  updatePendingBanner((await idbAll(db)).length);
-
-  if ("serviceWorker" in navigator && "SyncManager" in window) {
-    navigator.serviceWorker.ready.then(function (reg) { return reg.sync.register("sync-offline-sales"); }).catch(function () {});
+// Fallback for browsers/situations where Background Sync doesn't fire on its
+// own: the moment THIS page notices it's back online, nudge the service worker
+// to try syncing right away.
+window.addEventListener("online", function () {
+  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({ type: "TRY_SYNC" });
   }
-  window.syncNow();
-  return payload;
-};
+});
 
-// Direct send, only used if the phone's storage isn't available. Resolves to the
-// server's JSON answer; rejects on a network problem.
-window.sendDirect = function (payload) {
-  return fetch("/staff/sale/api", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload), credentials: "same-origin",
-  }).then(function (r) { return r.json(); });
-};
-
-// ---------------- Background sending ----------------
-let syncing = false;
-window.syncNow = async function () {
-  if (syncing) return;
-  syncing = true;
-  let authProblem = false;
-  let db;
-  try {
-    db = await openQueueDB();
-    const items = await idbAll(db);
-    for (const item of items) {
-      const ctl = new AbortController();
-      const timer = setTimeout(function () { ctl.abort(); }, 20000); // weak signal: don't wait forever
-      try {
-        const res = await fetch("/staff/sale/api", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(item.payload), credentials: "same-origin", signal: ctl.signal,
-        });
-        clearTimeout(timer);
-        if (res.status === 401 || res.redirected) { authProblem = true; break; }
-        const result = await res.json();
-        if (result.ok) {
-          await idbRemove(db, item.id);
-          markSent(item.payload.client_token, result.reference_number);
-        } else {
-          const tr = rowFor(item.payload.client_token);
-          if (result.permanent) {
-            // Can never succeed: stop retrying and clear it from the queue.
-            await idbRemove(db, item.id);
-            markRejected(item.payload.client_token, result.error || "Sale rejected.");
-            alert("A sale was NOT recorded:\n\n" + item.payload.chair_type + " " + item.payload.duration_minutes +
-                  " min\n" + (result.error || "Sale rejected.") + "\n\nPlease enter it again with the correct details.");
-          } else if (tr) {
-            setRowStatus(tr, "error", "⚠ not accepted yet: " + (result.error || "will retry"));
-          }
-        }
-      } catch (err) {
-        clearTimeout(timer);
-        break; // no signal / timed out: leave everything queued, try again shortly
-      }
-    }
-  } catch (e) {
-    // IndexedDB unavailable - nothing queued to send.
-  } finally {
-    syncing = false;
-    try { updatePendingBanner(db ? (await idbAll(db)).length : 0, authProblem); } catch (e) {}
-  }
-};
-
-// ---------------- Startup ----------------
-window.addEventListener("online", function () { updateConnectionBanner(); window.syncNow(); });
-window.addEventListener("offline", updateConnectionBanner);
-document.addEventListener("visibilitychange", function () { if (!document.hidden) window.syncNow(); });
-setInterval(window.syncNow, 10000);
-
-// The service worker tells us when it sent a sale while this page was open.
+// The service worker tells us when a queued sale successfully syncs, so we can
+// update the on-screen "pending" count and today's-sales count without staff
+// needing to do anything.
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.addEventListener("message", function (event) {
-    if (event.data && event.data.type === "SALE_REJECTED") {
-      markRejected(event.data.clientToken, event.data.error);
-      window.syncNow();
-    }
+  navigator.serviceWorker.addEventListener("message", async function (event) {
     if (event.data && event.data.type === "SALE_SYNCED") {
-      markSent(event.data.clientToken, event.data.referenceNumber);
-      window.syncNow(); // refresh the waiting-count banner
+      const db = await openQueueDB();
+      const pending = await countQueued(db);
+      updatePendingBanner(pending);
+      const countEl = document.getElementById("todaysSalesCount");
+      if (countEl) countEl.innerText = (parseInt(countEl.innerText, 10) || 0) + 1;
     }
   });
 }
 
-document.addEventListener("DOMContentLoaded", async function () {
-  updateConnectionBanner();
+// Show the pending count on page load too, in case there were queued sales from
+// a previous offline session that haven't synced yet.
+(async function () {
   try {
-    // Sales still waiting from earlier: show them in the lists again. Skip any that
-    // the server already has (listed with the same token) - they just need clearing.
     const db = await openQueueDB();
-    const items = await idbAll(db);
-    const serverTokens = {};
-    document.querySelectorAll("tr[data-token]").forEach(function (tr) { if (tr.dataset.token) serverTokens[tr.dataset.token] = true; });
-    let stillWaiting = 0;
-    for (const it of items) {
-      if (serverTokens[it.payload.client_token]) { await idbRemove(db, it.id); continue; }
-      addPendingRow(it.payload);
-      stillWaiting++;
-    }
-    const countEl = document.getElementById("todaysSalesCount");
-    if (countEl && stillWaiting) countEl.innerText = (parseInt(countEl.innerText, 10) || 0) + stillWaiting;
-    updatePendingBanner(stillWaiting);
-    if (stillWaiting) window.syncNow();
-  } catch (e) { /* IndexedDB not available: sales are sent directly instead */ }
-});
-
-// Compatibility for a staff page saved on the phone by an older version of the app.
-window.queueOfflineSale = function (formData) { return window.saveSaleLocally(formData); };
-window.recentQueuedDuplicate = function () { return Promise.resolve(false); };
+    const pending = await countQueued(db);
+    updatePendingBanner(pending);
+  } catch (e) { /* IndexedDB not available - offline queueing simply won't work on this browser */ }
+})();

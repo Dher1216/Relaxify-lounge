@@ -4,7 +4,7 @@ import datetime
 from decimal import Decimal
 from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import RedirectResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from ..database import get_db
 from ..auth import get_current_user, can
@@ -172,7 +172,10 @@ def list_transactions(
         # sale is placed by which chair-revenue account (4101 / 4102) it credited.
         # Amounts are revenue-line net (credit - debit) so the column totals
         # add up to the dashboard's "Total Sales Today".
-        sale_txns = query.order_by(Transaction.transaction_date.desc(), Transaction.id.desc()).all()
+        sale_txns = (
+            query.options(selectinload(Transaction.lines).selectinload(TransactionLine.account))
+            .order_by(Transaction.transaction_date.desc(), Transaction.id.desc()).all()
+        )
         deluxe_acc = db.query(Account).filter(Account.code == "4101").first()
         king_acc = db.query(Account).filter(Account.code == "4102").first()
         rev_root = db.query(Account).filter(Account.code == "4100").first()
@@ -206,7 +209,8 @@ def list_transactions(
     total_pages = max(1, (total + page_size - 1) // page_size)
     page = max(1, min(page, total_pages))
     txns = (
-        query.order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
+        query.options(selectinload(Transaction.lines))
+        .order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
         .offset((page - 1) * page_size).limit(page_size).all()
     )
     # Debit total always equals credit total for a saved (balanced) transaction, so

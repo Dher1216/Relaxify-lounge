@@ -1,6 +1,6 @@
 import datetime
 from sqlalchemy import (
-    Column, Integer, String, Numeric, Date, DateTime, ForeignKey, Boolean, Text
+    Column, Integer, String, Numeric, Date, DateTime, ForeignKey, Boolean, Text, Index
 )
 from sqlalchemy.orm import relationship, backref
 from .database import Base
@@ -59,6 +59,12 @@ class Transaction(Base):
 
     lines = relationship("TransactionLine", back_populates="transaction", cascade="all, delete-orphan")
 
+    # Reports filter on status + date range constantly; these let the database skip the rest.
+    __table_args__ = (
+        Index("ix_transactions_status_date", "status", "transaction_date"),
+        Index("ix_transactions_date", "transaction_date"),
+    )
+
 
 class TransactionLine(Base):
     __tablename__ = "transaction_lines"
@@ -71,6 +77,11 @@ class TransactionLine(Base):
 
     transaction = relationship("Transaction", back_populates="lines")
     account = relationship("Account")
+
+    __table_args__ = (
+        Index("ix_txnlines_transaction", "transaction_id"),
+        Index("ix_txnlines_account_txn", "account_id", "transaction_id"),
+    )
 
 
 class AuditLog(Base):

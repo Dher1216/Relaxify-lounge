@@ -186,6 +186,26 @@ def _auto_add_missing_columns():
 _auto_add_missing_columns()
 
 
+def _ensure_report_indexes():
+    """create_all() only builds indexes for brand-new tables, so on a database that already
+    has data these speed-up indexes are added here. IF NOT EXISTS makes it safe on every
+    startup (SQLite and Postgres) and it never changes or removes data."""
+    for stmt in (
+        "CREATE INDEX IF NOT EXISTS ix_transactions_status_date ON transactions (status, transaction_date)",
+        "CREATE INDEX IF NOT EXISTS ix_transactions_date ON transactions (transaction_date)",
+        "CREATE INDEX IF NOT EXISTS ix_txnlines_transaction ON transaction_lines (transaction_id)",
+        "CREATE INDEX IF NOT EXISTS ix_txnlines_account_txn ON transaction_lines (account_id, transaction_id)",
+    ):
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(stmt))
+        except Exception as e:  # noqa: BLE001 - never block startup over an optimisation
+            print(f"[report-index] could not run: {stmt} -> {e}")
+
+
+_ensure_report_indexes()
+
+
 def _ensure_unique_tokens():
     """A column added later by _auto_add_missing_columns() gets no UNIQUE rule, so on an
     older database the duplicate-sale guard (client_token) was only a check, not a

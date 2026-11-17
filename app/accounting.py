@@ -1,6 +1,6 @@
 import datetime
 from decimal import Decimal, InvalidOperation
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import func
 
 from .models import Transaction, TransactionLine, Account, Counter, ChairRate, Setting
@@ -121,13 +121,41 @@ def account_net_balance(db: Session, account: Account, as_of: datetime.date = No
         return total_credit - total_debit
 
 
+def balances_by_account(db: Session, as_of: datetime.date = None, from_date: datetime.date = None) -> dict:
+    """ONE grouped query returning {account_id: (total_debit, total_credit)} from ACTIVE
+    transactions. Reports used to call account_net_balance() once per account (dozens of
+    separate database round trips); this does the same arithmetic in a single trip."""
+    q = (
+        db.query(
+            TransactionLine.account_id,
+            func.coalesce(func.sum(TransactionLine.debit), 0),
+            func.coalesce(func.sum(TransactionLine.credit), 0),
+        )
+        .join(Transaction, Transaction.id == TransactionLine.transaction_id)
+        .filter(Transaction.status == "ACTIVE")
+    )
+    if from_date:
+        q = q.filter(Transaction.transaction_date >= from_date)
+    if as_of:
+        q = q.filter(Transaction.transaction_date <= as_of)
+    q = q.group_by(TransactionLine.account_id)
+    return {aid: (Decimal(d), Decimal(c)) for aid, d, c in q.all()}
+
+
+def net_from_totals(account: Account, totals: dict) -> Decimal:
+    """Same result as account_net_balance(), read from a balances_by_account() result."""
+    d, c = totals.get(account.id, (Decimal("0"), Decimal("0")))
+    return (d - c) if account.normal_balance == "Debit" else (c - d)
+
+
 def trial_balance(db: Session, as_of: datetime.date):
     accounts = db.query(Account).filter(Account.is_active == True).order_by(Account.code).all()  # noqa: E712
     rows = []
     total_debit = Decimal("0.00")
     total_credit = Decimal("0.00")
+    totals = balances_by_account(db, as_of=as_of)
     for acc in accounts:
-        balance = account_net_balance(db, acc, as_of=as_of)
+        balance = net_from_totals(acc, totals)
         if balance == 0:
             continue
         if acc.normal_balance == "Debit":
@@ -154,8 +182,9 @@ def income_statement(db: Session, from_date: datetime.date, to_date: datetime.da
     revenue, cogs, expenses = [], [], []
     total_revenue = total_cogs = total_expenses = Decimal("0.00")
 
+    totals = balances_by_account(db, as_of=to_date, from_date=from_date)
     for acc in accounts:
-        balance = account_net_balance(db, acc, as_of=to_date, from_date=from_date)
+        balance = net_from_totals(acc, totals)
         if balance == 0:
             continue
         if acc.account_type == "Revenue":
@@ -192,8 +221,9 @@ def balance_sheet(db: Session, as_of: datetime.date):
     assets, liabilities, equity = [], [], []
     total_assets = total_liabilities = total_equity = Decimal("0.00")
 
+    totals = balances_by_account(db, as_of=as_of)
     for acc in accounts:
-        balance = account_net_balance(db, acc, as_of=as_of)
+        balance = net_from_totals(acc, totals)
         if balance == 0:
             continue
         row = {"code": acc.code, "name": acc.name, "amount": balance}
@@ -234,9 +264,11 @@ def statement_of_changes_in_equity(db: Session, from_date: datetime.date, to_dat
     withdrawals = Decimal("0.00")
     day_before = from_date - datetime.timedelta(days=1)
 
+    totals_before = balances_by_account(db, as_of=day_before)
+    totals_period = balances_by_account(db, as_of=to_date, from_date=from_date)
     for acc in equity_accounts:
-        beginning += account_net_balance(db, acc, as_of=day_before)
-        period_balance = account_net_balance(db, acc, as_of=to_date, from_date=from_date)
+        beginning += net_from_totals(acc, totals_before)
+        period_balance = net_from_totals(acc, totals_period)
         if acc.normal_balance == "Credit":
             additions += period_balance if period_balance > 0 else Decimal("0.00")
             withdrawals += -period_balance if period_balance < 0 else Decimal("0.00")
@@ -273,13 +305,16 @@ def cash_flow_statement(db: Session, from_date: datetime.date, to_date: datetime
     cash_ids = {a.id for a in cash_accounts}
 
     day_before = from_date - datetime.timedelta(days=1)
-    beginning_cash = sum((account_net_balance(db, a, as_of=day_before) for a in cash_accounts), Decimal("0.00"))
-    ending_cash = sum((account_net_balance(db, a, as_of=to_date) for a in cash_accounts), Decimal("0.00"))
+    totals_begin = balances_by_account(db, as_of=day_before)
+    totals_end = balances_by_account(db, as_of=to_date)
+    beginning_cash = sum((net_from_totals(a, totals_begin) for a in cash_accounts), Decimal("0.00"))
+    ending_cash = sum((net_from_totals(a, totals_end) for a in cash_accounts), Decimal("0.00"))
 
     operating = investing = financing = Decimal("0.00")
 
     txns = (
         db.query(Transaction)
+        .options(selectinload(Transaction.lines).selectinload(TransactionLine.account))
         .filter(Transaction.status == "ACTIVE")
         .filter(Transaction.transaction_date >= from_date, Transaction.transaction_date <= to_date)
         .all()
@@ -328,12 +363,14 @@ def account_ledger(db: Session, account: Account, from_date: datetime.date, to_d
     normal = account.normal_balance  # children are expected to share the parent's normal balance
 
     day_before = from_date - datetime.timedelta(days=1)
+    totals_before = balances_by_account(db, as_of=day_before)
     beginning = Decimal("0.00")
     for a in accounts_in_scope:
-        beginning += account_net_balance(db, a, as_of=day_before)
+        beginning += net_from_totals(a, totals_before)
 
     lines = (
         db.query(TransactionLine)
+        .options(joinedload(TransactionLine.transaction), joinedload(TransactionLine.account))
         .join(Transaction, Transaction.id == TransactionLine.transaction_id)
         .filter(TransactionLine.account_id.in_(ids))
         .filter(Transaction.status == "ACTIVE")

@@ -4,11 +4,11 @@ import datetime
 from ..template_env import templates
 from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import RedirectResponse, StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 import openpyxl
 from openpyxl.styles import Font, Alignment
 
-from ..database import get_db
+from ..database import get_db, SessionLocal
 from ..auth import get_current_user
 from ..models import Transaction, TransactionLine, Account, AuditLog, FinancialNote
 from .. import accounting as acc
@@ -27,8 +27,11 @@ def _parse(d, fallback):
 
 
 def _log_report(db, user, name, period_str):
-    db.add(AuditLog(username=user.username, action=f"Generated {name} ({period_str})", module="REPORTS"))
-    db.commit()
+    # Own short session on purpose: committing on the request's session makes SQLAlchemy
+    # discard everything the report just loaded, so the page re-fetched each row one by one.
+    with SessionLocal() as log_db:
+        log_db.add(AuditLog(username=user.username, action=f"Generated {name} ({period_str})", module="REPORTS"))
+        log_db.commit()
 
 
 def _xlsx_response(wb, filename):
@@ -254,6 +257,7 @@ def daily_view(request: Request, db: Session = Depends(get_db), date_from: str =
 
     lines = (
         db.query(TransactionLine)
+        .options(joinedload(TransactionLine.transaction), joinedload(TransactionLine.account))
         .join(Transaction, Transaction.id == TransactionLine.transaction_id)
         .filter(Transaction.transaction_date >= d_from, Transaction.transaction_date <= d_to)
         .order_by(Transaction.transaction_date, Transaction.id)
