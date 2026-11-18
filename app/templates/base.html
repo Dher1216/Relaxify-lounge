@@ -4,7 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Relaxify Lounge{% endblock %}</title>
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/style.css?v={{ build_id }}">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0b0b0c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Relaxify">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/css/pwa.css?v={{ build_id }}">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -20,6 +28,7 @@
     <nav class="mainnav">
       {% if user.role == "STAFF" %}
       <a href="/staff/sale" class="navtop" style="text-decoration:none;display:inline-block">Record a Sale</a>
+      <a href="/staff/sock-count" class="navtop" style="text-decoration:none;display:inline-block">End of Shift Count</a>
       {% else %}
       <a href="/" class="navtop" style="text-decoration:none;display:inline-block">Dashboard</a>
       <div class="navgroup">
@@ -51,6 +60,7 @@
           <a href="/users">Users</a>
           <a href="/accounts">Account Codes</a>
           <a href="/rates">Rates & Settings</a>
+          <a href="/inventory/socks">Foot Socks Inventory</a>
           <a href="/audit">History / Audit Trail</a>
         </div>
       </div>
@@ -129,6 +139,8 @@
     window.addEventListener('resize', setupScrollHints);
     // Re-check shortly after load too, since some tables' widths settle after fonts/images load.
     setTimeout(setupScrollHints, 300);
+  });
 </script>
+<script src="/static/js/pwa.js?v={{ build_id }}" defer></script>
 </body>
 </html>

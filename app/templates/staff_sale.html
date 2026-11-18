@@ -1,9 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Record a Sale - Relaxify Lounge{% endblock %}
 {% block head %}
-<link rel="manifest" href="/static/manifest.json">
-<meta name="theme-color" content="#0b0b0c">
-<script src="/static/js/staff-offline.js" defer></script>
+<script src="/static/js/staff-offline.js?v={{ build_id }}" defer></script>
 {% endblock %}
 {% block content %}
 <div style="max-width:480px;margin:0 auto">
@@ -11,8 +9,23 @@
 
   {% if saved_ref %}<div class="success-msg" style="text-align:center">Sale recorded &mdash; {{ saved_ref }}</div>{% endif %}
   {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+  {% if dup %}
+  <div class="card" style="border-color:var(--gold);text-align:center">
+    <h3 style="color:var(--gold-bright);margin-top:0">Same sale already recorded</h3>
+    <p>An identical sale was recorded <strong>{{ dup.ago }} ago</strong> ({{ dup.ref }}):<br>
+      <strong>{{ dup.summary }}</strong> &mdash; &#8369;{{ dup.net }}</p>
+    <p style="color:#ccc;font-size:0.9rem">Is this a <strong>different customer</strong>? If you are only unsure whether the first one saved, choose No &mdash; it did.</p>
+    <form method="post" action="/staff/sale" style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+      {% for k, v in dup.fields.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <input type="hidden" name="confirm_duplicate" value="1">
+      <button type="submit">Yes, record another</button>
+      <a class="btn btn-secondary" href="/staff/sale" style="text-decoration:none;display:inline-block;padding:10px 16px">No, cancel</a>
+    </form>
+  </div>
+  {% endif %}
+  <div id="savedToast" class="success-msg" style="display:none;text-align:center"></div>
   <div id="offlineBanner" class="error-msg" style="display:none;background:rgba(201,162,75,0.15);border-color:var(--gold);color:var(--gold-bright);text-align:center">
-    No connection right now &mdash; this sale will save on your phone and send automatically once you're back online.
+    No connection right now &mdash; sales are saved on your phone and will send automatically once you're back online.
   </div>
   <div id="pendingBanner" class="success-msg" style="display:none;text-align:center"></div>
 
@@ -55,7 +68,7 @@
 
       <div id="pwdField" style="display:none">
         <label>PWD / Senior ID Number</label>
-        <input type="text" name="pwd_senior_id" id="pwdSeniorId">
+        <input type="text" name="pwd_senior_id" id="pwdSeniorId" pattern=".*\S.*" title="Enter the PWD / Senior ID number">
       </div>
       <div id="promoField" style="display:none">
         <label>Promo Discount %</label>
@@ -72,7 +85,6 @@
   </div>
 </div>
 
-{% if deluxe_sales or king_sales %}
 <div style="max-width:900px;margin:20px auto 0">
   <h3 style="text-align:center;font-size:1rem;color:var(--gold-bright)">Your Sales Today</h3>
   <div class="grid grid-2">
@@ -80,15 +92,17 @@
       <h3 style="font-size:0.95rem;text-align:center">Deluxe</h3>
       <div class="table-wrap">
       <table>
-        <tr><th>Time</th><th>Details</th></tr>
+        <thead><tr><th>Time</th><th>Details</th></tr></thead>
+        <tbody id="deluxeRows">
         {% for t in deluxe_sales %}
-        <tr>
+        <tr data-token="{{ t.client_token or '' }}">
           <td>{{ (t.occurred_at or t.created_at) | manila_datetime('%I:%M %p') }}</td>
           <td>{{ t.remarks }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="2" style="color:#999">No Deluxe sales yet</td></tr>
+        <tr class="empty-row"><td colspan="2" style="color:#999">No Deluxe sales yet</td></tr>
         {% endfor %}
+        </tbody>
       </table>
       </div>
     </div>
@@ -96,28 +110,30 @@
       <h3 style="font-size:0.95rem;text-align:center">King</h3>
       <div class="table-wrap">
       <table>
-        <tr><th>Time</th><th>Details</th></tr>
+        <thead><tr><th>Time</th><th>Details</th></tr></thead>
+        <tbody id="kingRows">
         {% for t in king_sales %}
-        <tr>
+        <tr data-token="{{ t.client_token or '' }}">
           <td>{{ (t.occurred_at or t.created_at) | manila_datetime('%I:%M %p') }}</td>
           <td>{{ t.remarks }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="2" style="color:#999">No King sales yet</td></tr>
+        <tr class="empty-row"><td colspan="2" style="color:#999">No King sales yet</td></tr>
         {% endfor %}
+        </tbody>
       </table>
       </div>
     </div>
   </div>
 </div>
-{% endif %}
 
 <script>
 const rateMap = {{ rate_map | tojson }};
 const settings = {
   shortThreshold: {{ settings.get('eye_massager_short_threshold', 15) }},
   freeThreshold: {{ settings.get('eye_massager_free_threshold', 30) }},
-  shortPrice: {{ settings.get('eye_massager_short_price', 20) }}
+  shortPrice: {{ settings.get('eye_massager_short_price', 20) }},
+  chairUnits: { Deluxe: {{ settings.get('chair_units_deluxe', 3) }}, King: {{ settings.get('chair_units_king', 1) }} }
 };
 
 function updateDurations() {
@@ -144,6 +160,11 @@ function toggleDiscountFields() {
   const type = document.getElementById('discountType').value;
   document.getElementById('pwdField').style.display = type === 'PWD_SENIOR' ? 'block' : 'none';
   document.getElementById('promoField').style.display = type === 'PROMO' ? 'block' : 'none';
+  // Required only while visible (a hidden required field would silently block Submit).
+  // Without this, a PWD/Senior sale could be "saved" on the phone without an ID, and the
+  // server would then reject it on every retry.
+  document.getElementById('pwdSeniorId').required = (type === 'PWD_SENIOR');
+  document.getElementById('promoPercent').required = (type === 'PROMO');
 }
 
 function recalcTotal() {
@@ -174,34 +195,124 @@ function genToken() {
   return 'tok-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 }
 
-// Generate a fresh idempotency token as soon as the page loads, and again after
-// any successful submit - so every distinct sale gets its own unique token, but
-// a retry/resubmit of the SAME attempt (e.g. a slow network causing a second
-// click, or an offline queue re-sending) always carries the SAME token and can
-// never create a duplicate transaction.
-document.getElementById('clientToken').value = genToken();
+// ---- Save first, send in the background ----------------------------------
+// Submit saves the sale ON THE PHONE straight away (see staff-offline.js), shows
+// "Saved", clears the form and sends it to the server in the background, retrying
+// until it gets through. The sale's unique token never changes between retries, so
+// it can't be recorded twice. Deluxe has several chairs so identical Deluxe sales
+// are normal; with a single chair (King) an identical sale within minutes asks first.
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+const RECENT_KEY = 'relaxify_recent_sales';
+const RECENT_MS = 3 * 60 * 1000;
 
+function saleSignature(data) {
+  return JSON.stringify([data.get('transaction_date'), data.get('chair_type'), data.get('duration_minutes'),
+    data.get('eye_massager') === '1', data.get('discount_type'), (data.get('pwd_senior_id') || '').trim(), data.get('promo_percent') || '']);
+}
+function recentSales() {
+  try {
+    const all = JSON.parse(lsGet(RECENT_KEY) || '[]');
+    return all.filter(function (r) { return Date.now() - r.ts < RECENT_MS; });
+  } catch (e) { return []; }
+}
+function rememberSale(sig) {
+  const list = recentSales(); list.push({ sig: sig, ts: Date.now() });
+  lsSet(RECENT_KEY, JSON.stringify(list));
+}
+
+let currentToken = genToken();            // renewed only once a sale is safely stored
+document.getElementById('clientToken').value = currentToken;
+
+// Coming back with the Back button would show a filled-in form; always start clean.
+window.addEventListener('pageshow', function (e) { if (e.persisted) location.reload(); });
+
+function showSaved(text) {
+  const el = document.getElementById('savedToast');
+  el.textContent = '\u2713 Saved \u2014 ' + text;
+  el.style.display = 'block';
+  clearTimeout(showSaved._t);
+  showSaved._t = setTimeout(function () { el.style.display = 'none'; }, 5000);
+}
+
+let submitting = false;
 document.getElementById('saleForm').addEventListener('submit', function (e) {
-  document.getElementById('occurredAt').value = new Date().toISOString();
-  const btn = document.getElementById('submitBtn');
-  btn.disabled = true;
-  btn.innerText = 'Submitting...';
-  if (!navigator.onLine) {
-    // Offline handling (queueing + background sync) lives in staff-offline.js
-    e.preventDefault();
-    if (window.queueOfflineSale) {
-      window.queueOfflineSale(new FormData(this)).then(function () {
-        document.getElementById('offlineBanner').style.display = 'block';
-        btn.disabled = false;
-        btn.innerText = 'Submit Sale';
-        document.getElementById('clientToken').value = genToken();
-      });
-    } else {
-      btn.disabled = false;
-      btn.innerText = 'Submit Sale';
-    }
+  e.preventDefault();
+  const formEl = this;
+  try {
+    handleSale(formEl);
+  } catch (err) {
+    // Safety net: if anything in the save-first code fails, never leave the staff member
+    // stuck with a dead button - send the sale the plain way (the server still guards duplicates).
+    submitting = false;
+    document.getElementById('submitBtn').disabled = false;
+    formEl.submit();
   }
 });
+
+function handleSale(form) {
+  if (submitting) return;                              // ignore double-taps
+  if (!form.reportValidity()) return;
+
+  // Explicit checks (do not rely only on the HTML "required" attribute, which accepts a
+  // few spaces and can be missing on an old saved copy of this page). A sale that breaks
+  // these rules is NEVER saved or queued.
+  const dtype = document.getElementById('discountType').value;
+  if (dtype === 'PWD_SENIOR' && !document.getElementById('pwdSeniorId').value.trim()) {
+    alert('PWD / Senior ID number is required. This sale was NOT recorded - enter the ID number first.');
+    document.getElementById('pwdSeniorId').focus();
+    return;
+  }
+  if (dtype === 'PROMO') {
+    const pct = parseFloat(document.getElementById('promoPercent').value);
+    if (!(pct > 0 && pct <= 100)) {
+      alert('Enter the promo discount % (more than 0, up to 100). This sale was NOT recorded.');
+      document.getElementById('promoPercent').focus();
+      return;
+    }
+  }
+  submitting = true;
+
+  document.getElementById('occurredAt').value = new Date().toISOString();
+  document.getElementById('clientToken').value = currentToken;
+  const data = new FormData(form);
+  const sig = saleSignature(data);
+  const chair = data.get('chair_type');
+  const units = (settings.chairUnits && settings.chairUnits[chair]) || 1;
+  const btn = document.getElementById('submitBtn');
+
+  if (units === 1 && recentSales().some(function (r) { return r.sig === sig; }) &&
+      !window.confirm('An identical ' + chair + ' sale was just recorded, and there is only one ' + chair + ' chair. Is this a DIFFERENT customer?\n\nOK = record another\nCancel = do not record')) {
+    submitting = false;
+    return;
+  }
+
+  btn.disabled = true;
+  const summary = chair + ' ' + data.get('duration_minutes') + ' min \u2014 ' + document.getElementById('totalDisplay').innerText;
+
+  function finishSaved() {
+    rememberSale(sig);
+    showSaved(summary);
+    form.reset();
+    updateDurations(); toggleDiscountFields(); recalcTotal();
+    currentToken = genToken();
+    document.getElementById('clientToken').value = currentToken;
+    btn.disabled = false;
+    submitting = false;
+  }
+
+  window.saveSaleLocally(data).then(finishSaved).catch(function () {
+    // The phone could not store it (rare): send directly and only clear the form if the server confirms.
+    const payload = {}; data.forEach(function (v, k) { payload[k] = v; });
+    window.sendDirect(payload).then(function (r) {
+      if (r.ok) { finishSaved(); }
+      else { alert('This sale could not be saved. Please check the details and try again.'); btn.disabled = false; submitting = false; }
+    }).catch(function () {
+      alert('No connection, and this phone cannot save sales offline. Please try again when you have signal.');
+      btn.disabled = false; submitting = false;
+    });
+  });
+}
 
 document.querySelectorAll('#duration').forEach(function (el) { el.addEventListener('change', recalcTotal); });
 recalcTotal();

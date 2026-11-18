@@ -11,6 +11,10 @@ from ..auth import get_current_user
 from ..models import Account, ChairRate, Setting, Transaction, TransactionLine, AuditLog
 from ..accounting import next_reference_number, to_decimal
 
+# How long after recording a sale an identical one from the same staff member triggers
+# the "is this a separate customer?" question.
+DUPLICATE_WINDOW_MINUTES = 3
+
 router = APIRouter(prefix="/staff")
 
 CHAIR_CODES = {"Deluxe": "4101", "King": "4102"}
@@ -97,19 +101,21 @@ def submit_sale(
     transaction_date: str = Form(...), chair_type: str = Form(...), duration_minutes: int = Form(...),
     eye_massager: str = Form("0"), discount_type: str = Form("NONE"),
     pwd_senior_id: str = Form(""), promo_percent: str = Form(""),
-    client_token: str = Form(""), occurred_at: str = Form(""),
+    client_token: str = Form(""), occurred_at: str = Form(""), confirm_duplicate: str = Form("0"),
 ):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=303)
 
-    def render_error(msg):
+    def render_error(msg, permanent=False):
+        # permanent=True: the sale itself breaks a rule (e.g. missing PWD/Senior ID), so
+        # retrying can never succeed. The offline sync uses this to stop retrying and clear it.
         from ..accounting import current_chair_rates
         rate_map = current_chair_rates(db, datetime.date.today())
         deluxe_sales, king_sales = _todays_sales_by_chair(db, user.username)
         return templates.TemplateResponse("staff_sale.html", {
             "request": request, "user": user, "rate_map": rate_map, "settings": _get_settings(db),
-            "today": transaction_date, "error": msg, "saved_ref": None,
+            "today": transaction_date, "error": msg, "saved_ref": None, "permanent": permanent,
             "deluxe_sales": deluxe_sales, "king_sales": king_sales,
             "todays_sales_count": len(deluxe_sales) + len(king_sales),
         })
@@ -127,11 +133,11 @@ def submit_sale(
     try:
         t_date = datetime.date.fromisoformat(transaction_date)
     except ValueError:
-        return render_error("Please select a valid date.")
+        return render_error("Please select a valid date.", permanent=True)
     if t_date > datetime.date.today():
-        return render_error("Date cannot be in the future.")
+        return render_error("Date cannot be in the future.", permanent=True)
     if chair_type not in CHAIR_CODES:
-        return render_error("Please select a valid chair.")
+        return render_error("Please select a valid chair.", permanent=True)
 
     rate = _get_rate(db, chair_type, duration_minutes, t_date)
     if not rate:
@@ -159,7 +165,7 @@ def submit_sale(
 
     if discount_type == "PWD_SENIOR":
         if not pwd_senior_id.strip():
-            return render_error("PWD/Senior ID number is required to apply this discount.")
+            return render_error("PWD/Senior ID number is required to apply this discount.", permanent=True)
         discount_amount = (gross * Decimal("0.20")).quantize(Decimal("0.01"))
         discount_code = DISCOUNT_CODES["PWD_SENIOR"]
         remarks_bits.append(f"- PWD/Senior Discount 20% (ID: {pwd_senior_id.strip()})")
@@ -167,9 +173,9 @@ def submit_sale(
         try:
             pct = Decimal(promo_percent or "0")
         except Exception:
-            return render_error("Please enter a valid promo discount percentage.")
+            return render_error("Please enter a valid promo discount percentage.", permanent=True)
         if pct < 0 or pct > 100:
-            return render_error("Promo discount percentage must be between 0 and 100.")
+            return render_error("Promo discount percentage must be between 0 and 100.", permanent=True)
         if pct > 0:
             discount_amount = (gross * pct / Decimal("100")).quantize(Decimal("0.01"))
             discount_code = DISCOUNT_CODES["PROMO"]
@@ -177,7 +183,7 @@ def submit_sale(
 
     net_cash = gross - discount_amount
     if net_cash < 0:
-        return render_error("Discount cannot exceed the total price.")
+        return render_error("Discount cannot exceed the total price.", permanent=True)
 
     cash_acc = _get_account(db, CASH_CODE)
     chair_acc = _get_account(db, CHAIR_CODES[chair_type])
@@ -199,11 +205,58 @@ def submit_sale(
     if not occurred_dt:
         occurred_dt = datetime.datetime.utcnow()
 
+    # --- "Did you mean to record this twice?" guard ---------------------------
+    # The token check above only catches the SAME attempt being re-sent. It can't
+    # catch a person entering an identical sale again by hand (e.g. unsure whether
+    # the first one went through, especially after an offline sync). So if this
+    # user already recorded exactly the same sale in the last few minutes, ask
+    # before saving another. Skipped for the offline-sync endpoint (confirm_duplicate
+    # is "1" there) because a queued sale can't be asked a question, and two real
+    # customers with identical sales are legitimate.
+    this_remarks = " ".join(remarks_bits)
+    if confirm_duplicate != "1":
+        window_start = datetime.datetime.utcnow() - datetime.timedelta(minutes=DUPLICATE_WINDOW_MINUTES)
+        recent_list = (
+            db.query(Transaction)
+            .filter(Transaction.created_by == user.username, Transaction.status == "ACTIVE",
+                    Transaction.chair_type == chair_type, Transaction.duration_minutes == duration_minutes,
+                    Transaction.remarks == this_remarks, Transaction.created_at >= window_start)
+            .order_by(Transaction.id.desc()).all()
+        )
+        # Only ask once the identical sales in the window have used up every chair of
+        # this type: Deluxe has 3 chairs, so up to 3 identical sales close together are
+        # normal; King has 1, so a second identical one within minutes can't be a new
+        # customer. (The window is far shorter than any session, so no chair can have
+        # finished and been reused inside it.)
+        units = max(1, int(settings.get(f"chair_units_{chair_type.lower()}", 1) or 1))
+        recent = recent_list[0] if len(recent_list) >= units else None
+        if recent:
+            seconds = int((datetime.datetime.utcnow() - recent.created_at).total_seconds())
+            from ..accounting import current_chair_rates
+            deluxe_sales, king_sales = _todays_sales_by_chair(db, user.username)
+            return templates.TemplateResponse("staff_sale.html", {
+                "request": request, "user": user, "rate_map": current_chair_rates(db, datetime.date.today()),
+                "settings": _get_settings(db), "today": transaction_date, "error": None, "saved_ref": None,
+                "deluxe_sales": deluxe_sales, "king_sales": king_sales,
+                "todays_sales_count": len(deluxe_sales) + len(king_sales),
+                "dup": {
+                    "ref": recent.reference_number, "summary": this_remarks, "net": f"{net_cash:,.2f}",
+                    "ago": f"{seconds // 60} min {seconds % 60} sec" if seconds >= 60 else f"{seconds} sec",
+                    "fields": {
+                        "transaction_date": transaction_date, "chair_type": chair_type,
+                        "duration_minutes": duration_minutes, "eye_massager": eye_massager,
+                        "discount_type": discount_type, "pwd_senior_id": pwd_senior_id,
+                        "promo_percent": promo_percent, "client_token": client_token,
+                        "occurred_at": occurred_at,
+                    },
+                },
+            })
+
     try:
         ref = next_reference_number(db, "RECEIPT", t_date)
         txn = Transaction(
             reference_number=ref, transaction_date=t_date, transaction_type="RECEIPT",
-            remarks=" ".join(remarks_bits), status="ACTIVE", created_by=user.username,
+            remarks=this_remarks, status="ACTIVE", created_by=user.username,
             client_token=client_token or None, occurred_at=occurred_dt,
             chair_type=chair_type, duration_minutes=duration_minutes,
         )
@@ -226,6 +279,13 @@ def submit_sale(
         db.commit()
     except Exception as e:
         db.rollback()
+        # Two copies of the same sale arriving at the same instant (e.g. a retry racing
+        # an offline sync): one wins, the other lands here. If the sale is already
+        # saved under this token, that is a success, not an error.
+        if client_token:
+            existing = db.query(Transaction).filter(Transaction.client_token == client_token).first()
+            if existing:
+                return RedirectResponse(f"/staff/sale?saved_ref={existing.reference_number}", status_code=303)
         detail = f" (Technical detail for admin: {type(e).__name__}: {e})" if user.role == "ADMIN" else ""
         return render_error(f"Unable to save this sale.{detail}")
 
@@ -257,6 +317,7 @@ async def submit_sale_api(request: Request, db: Session = Depends(get_db)):
         promo_percent=body.get("promo_percent", ""),
         client_token=body.get("client_token", ""),
         occurred_at=body.get("occurred_at", ""),
+        confirm_duplicate="1",
     )
     # submit_sale() returns a RedirectResponse on success or a TemplateResponse on error.
     # Translate both into a plain JSON result for the JS sync code to interpret.
@@ -264,4 +325,24 @@ async def submit_sale_api(request: Request, db: Session = Depends(get_db)):
         ref = result.headers["location"].split("saved_ref=")[-1]
         return JSONResponse({"ok": True, "reference_number": ref})
     else:
-        return JSONResponse({"ok": False, "error": "This sale could not be saved. It will remain queued and retry automatically."}, status_code=400)
+        # Pass the real reason back (e.g. "PWD/Senior ID number is required...") so the
+        # phone can show it instead of retrying silently forever.
+        ctx = getattr(result, "context", None) or {}
+        reason = ctx.get("error") or "This sale could not be saved."
+        permanent = bool(ctx.get("permanent"))
+        if permanent:
+            # The phone will now drop this sale from its queue (it can never succeed), so
+            # leave a record in the Audit Trail for the admin/accountant - once per sale,
+            # even if the phone and the background sync both report it.
+            token = (body.get("client_token") or "")[:40]
+            ref = ("REJ-" + token)[:50]
+            if token and not db.query(AuditLog).filter(AuditLog.reference == ref).first():
+                db.add(AuditLog(
+                    username=user.username,
+                    action=(f"REJECTED unsent sale (not recorded): {body.get('chair_type', '?')} "
+                            f"{body.get('duration_minutes', '?')}min, discount={body.get('discount_type', 'NONE')}, "
+                            f"entered at {body.get('occurred_at', '?')} - Reason: {reason}"),
+                    module="TRANSACTIONS", reference=ref,
+                ))
+                db.commit()
+        return JSONResponse({"ok": False, "permanent": permanent, "error": reason}, status_code=400)
